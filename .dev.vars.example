@@ -1,0 +1,9 @@
+# Copy this file to `.dev.vars` (git-ignored) and fill in real values.
+# `.dev.vars` is used by `wrangler dev` and by `node register.js`.
+
+# Discord Developer Portal > Application > General
+DISCORD_PUBLIC_KEY=your_public_key_here
+
+# Needed only by scripts/register.js to push slash commands to Discord
+DISCORD_APP_ID=your_application_id_here
+DISCORD_BOT_TOKEN=your_bot_token_here
