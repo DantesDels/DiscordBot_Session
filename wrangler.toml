@@ -1,0 +1,18 @@
+# Cloudflare Worker configuration.
+# See https://developers.cloudflare.com/workers/wrangler/configuration/
+
+name = "discordbot-session"
+main = "src/index.ts"
+compatibility_date = "2026-11-10"
+
+[vars]
+# Discord application public key (Developer Portal > Application > General).
+# Safe to commit: it is public and only used to verify request signatures.
+DISCORD_PUBLIC_KEY = "REPLACE_WITH_YOUR_DISCORD_PUBLIC_KEY"
+
+# Mission catalog storage. Create the namespace first:
+#   npx wrangler kv namespace create CATALOGUE_KV
+# then paste the printed id below.
+[[kv_namespaces]]
+binding = "CATALOGUE_KV"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
