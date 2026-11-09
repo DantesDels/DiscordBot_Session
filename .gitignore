@@ -1,0 +1,17 @@
+# Local agent instructions — never committed
+AGENTS.md
+
+# Dependencies
+node_modules/
+
+# Wrangler / Cloudflare
+.wrangler/
+.dev.vars
+
+# Environment & secrets
+.env
+.env.*
+
+# TypeScript
+dist/
+*.tsbuildinfo
