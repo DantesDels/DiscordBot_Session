@@ -10,15 +10,20 @@ import {
   parseSession,
 } from './lib/sessionMessage';
 import { missionChoices } from './lib/missionAutocomplete';
-import { addMission, removeMission, MAX_MISSION_LENGTH } from './lib/catalog';
+import {
+  addMission,
+  findMission,
+  getCatalogue,
+  MAX_MISSION_LENGTH,
+  MAX_SLOTS,
+  removeMission,
+} from './lib/catalog';
 
 // Cloudflare bindings (see wrangler.toml).
 export interface Env {
   DISCORD_PUBLIC_KEY: string;
   CATALOGUE_KV: KVNamespace;
 }
-
-const MAX_PLACES = 6;
 
 /** ------------------------------------------------------------------ *
  *  Discord interaction payloads (only the fields this bot reads).
@@ -53,10 +58,13 @@ function json(payload: unknown): Response {
 }
 
 /** Visible-to-everyone reply that also renders the join/leave buttons. */
-function sessionMessage(content: string, full: boolean): Response {
+function sessionMessage(content: string, full: boolean, roleId?: string): Response {
+  // Role pings in bot messages are silently dropped by Discord unless the
+  // role is explicitly allowed here.
+  const allowed_mentions = roleId ? { roles: [roleId] } : undefined;
   return json({
     type: 4, // CHANNEL_MESSAGE_WITH_SOURCE
-    data: { content, components: buildSessionComponents(full) },
+    data: { content, components: buildSessionComponents(full), allowed_mentions },
   });
 }
 
@@ -93,21 +101,22 @@ function userId(interaction: Interaction): string | undefined {
  *  Slash commands
  *  ------------------------------------------------------------------ */
 
-/** `/session mission:<...> places:<1-6> date_heure:<shortcut> [role:<...>]` */
-function handleSession(interaction: Interaction): Response {
+/** `/session mission:<catalogue> places:<1-6> date_heure:<shortcut>` — role comes from the catalog. */
+async function handleSession(interaction: Interaction, env: Env): Promise<Response> {
   const opts = options(interaction);
 
-  const mission = String(opts.get('mission') ?? '').trim();
+  // Mission must exist in the catalog: it carries the role to ping and the
+  // recommended squad size. Zero manual input = zero typos.
+  const missionName = String(opts.get('mission') ?? '').trim();
+  const catalogue = await getCatalogue(env.CATALOGUE_KV);
+  const mission = findMission(catalogue, missionName);
   if (!mission) {
-    return ephemeral('❌ Mission manquante ou introuvable dans le catalogue.');
-  }
-  if (mission.length > MAX_MISSION_LENGTH) {
-    return ephemeral('❌ Nom de mission trop long.');
+    return ephemeral('❌ Mission introuvable dans le catalogue. Choisis-la via l’autocomplétion.');
   }
 
   const places = Number(opts.get('places'));
-  if (!Number.isInteger(places) || places < 1 || places > MAX_PLACES) {
-    return ephemeral(`❌ Le nombre de places doit être compris entre 1 et ${MAX_PLACES}.`);
+  if (!Number.isInteger(places) || places < 1 || places > MAX_SLOTS) {
+    return ephemeral(`❌ Le nombre de places doit être compris entre 1 et ${MAX_SLOTS}.`);
   }
 
   const dateHeure = String(opts.get('date_heure') ?? '');
@@ -131,20 +140,19 @@ function handleSession(interaction: Interaction): Response {
     );
   }
 
-  const roleId = opts.get('role');
   const creatorId = userId(interaction);
   if (!creatorId) {
     return ephemeral('❌ Impossible de t’identifier.');
   }
 
   const content = buildSessionContent({
-    mission,
+    mission: mission.name,
     unix,
     places,
-    roleId: roleId ? String(roleId) : undefined,
+    roleId: mission.role_id,
     creatorId,
   });
-  return sessionMessage(content, parseSession(content).full);
+  return sessionMessage(content, parseSession(content).full, mission.role_id);
 }
 
 /** ------------------------------------------------------------------ *
@@ -197,10 +205,25 @@ async function handleAutocomplete(interaction: Interaction, env: Env): Promise<R
   } else if (option.name === 'date_heure') {
     choices = dateSuggestions(String(option.value ?? ''), new Date());
   } else if (option.name === 'places') {
-    choices = Array.from({ length: MAX_PLACES }, (_, i) => ({
-      name: `${i + 1} joueur${i > 0 ? 's' : ''}`,
-      value: i + 1,
-    }));
+    // All options the user has already filled are present in
+    // interaction.data.options — read the selected mission to recommend its
+    // configured squad size (starred and ranked first).
+    const catalogue = await getCatalogue(env.CATALOGUE_KV);
+    const missionName = String(options(interaction).get('mission') ?? '');
+    const mission = missionName ? findMission(catalogue, missionName) : undefined;
+
+    choices = [];
+    if (mission) {
+      choices.push({
+        name: `⭐ ${mission.slots} joueurs (recommandé — ${mission.name})`,
+        value: mission.slots,
+      });
+    }
+    for (let n = 1; n <= MAX_SLOTS; n++) {
+      if (!mission || n !== mission.slots) {
+        choices.push({ name: `${n} joueur${n > 1 ? 's' : ''}`, value: n });
+      }
+    }
   } else {
     choices = [];
   }
@@ -208,21 +231,33 @@ async function handleAutocomplete(interaction: Interaction, env: Env): Promise<R
   return json({ type: 8, data: { choices } }); // APPLICATION_COMMAND_AUTOCOMPLETE_RESULT
 }
 
-/** `/catalogue_ajouter mission:<...>` and `/catalogue_retirer mission:<...>` (moderators). */
+/** `/catalogue_ajouter mission role places` and `/catalogue_retirer mission` (moderators). */
 async function handleCatalog(interaction: Interaction, command: string, env: Env): Promise<Response> {
-  const mission = String(options(interaction).get('mission') ?? '').trim();
+  const opts = options(interaction);
 
   if (command === 'catalogue_ajouter') {
-    const added = await addMission(env.CATALOGUE_KV, mission);
-    return added
-      ? ephemeral(`✅ Mission « ${mission} » ajoutée au catalogue.`)
-      : ephemeral(`❌ Nom de mission invalide (1 à ${MAX_MISSION_LENGTH} caractères).`);
+    const name = String(opts.get('mission') ?? '').trim();
+    const roleId = String(opts.get('role') ?? '');
+    const slots = Number(opts.get('places'));
+
+    const result = await addMission(env.CATALOGUE_KV, { name, role_id: roleId, slots });
+    if (result === 'invalid') {
+      return ephemeral(
+        `❌ Mission invalide : nom de 1 à ${MAX_MISSION_LENGTH} caractères, rôle valide, places entre 1 et ${MAX_SLOTS}.`
+      );
+    }
+    if (result === 'duplicate') {
+      return ephemeral(`⚠️ La mission « ${name} » existe déjà dans le catalogue.`);
+    }
+    return ephemeral(
+      `✅ Mission « ${name} » ajoutée (rôle <@&${roleId}>, ${slots} places recommandées).`
+    );
   }
 
-  const removed = await removeMission(env.CATALOGUE_KV, mission);
+  const removed = await removeMission(env.CATALOGUE_KV, String(opts.get('mission') ?? ''));
   return removed
-    ? ephemeral(`🗑️ Mission « ${mission} » retirée du catalogue.`)
-    : ephemeral(`❌ Mission « ${mission} » introuvable dans le catalogue.`);
+    ? ephemeral('🗑️ Mission retirée du catalogue.')
+    : ephemeral('❌ Mission introuvable dans le catalogue.');
 }
 
 /** ------------------------------------------------------------------ *
@@ -261,7 +296,7 @@ export default {
     if (interaction.type === 2) {
       const command = interaction.data?.name ?? '';
       if (command === 'session') {
-        return handleSession(interaction);
+        return await handleSession(interaction, env);
       }
       if (command === 'catalogue_ajouter' || command === 'catalogue_retirer') {
         return await handleCatalog(interaction, command, env);
