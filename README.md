@@ -12,9 +12,9 @@ Le projet repose intégralement sur **Cloudflare Workers (Serverless)**.
 ## ✨ Fonctionnalités Clés
 - **Catalogue Dynamique (Cloudflare KV) :** La liste des missions est stockée dans un espace clé-valeur. Les modérateurs peuvent ajouter ou retirer des missions via des commandes restreintes (ex: `/admin_catalogue`) sans toucher au code.
 - **Autocomplétion Intelligente (Type 4) :**
-  - *Mission :* Recherche en temps réel dans la base KV dès que le joueur tape les premières lettres.
-  - *Places :* Sélection rapide via un menu fixe (1 à 6 joueurs).
-  - *Date & Heure :* Algorithme sur mesure gérant une fenêtre glissante de 7 jours avec protection anti-passé. Le joueur tape des raccourcis humains ("jeu 20h"), le bot traduit silencieusement en Timestamp UNIX.
+  - *Mission :* Recherche en temps réel dans la base KV dès que le joueur tape les premières lettres. La mission porte aussi la **taille d'escouade** (4 ou 6) et le rôle à ping.
+  - *Jour :* Menu proposant « Aujourd'hui », « Demain », puis les jours suivants sur une fenêtre glissante de 7 jours (saisie manuelle acceptée : « mar », « 13/11 »).
+  - *Heure :* Liste couvrant les prochaines 24 h par défaut (créneaux horaires, la limite Discord de 25 choix interdit 48 créneaux de 30 min), qui passe en **créneaux de 30 minutes** dès qu'une heure est tapée (« 20 », « 20h30 »). Tout créneau est aligné sur :00 / :30, avec protection anti-passé (un créneau nocturne ou écoulé bascule sur l'occurrence à venir).
 - **Affichage Natif & Dynamique (Type 2) :** Génération d'un message intégrant le ping du rôle concerné, l'heure formatée automatiquement au fuseau du lecteur `<t:X:F>`, et un compte à rebours en direct `<t:X:R>`.
 - **Gestion des Boutons (Type 3) :** Boutons `[ ⚔️ Rejoindre ]` et `[ ❌ Quitter ]`. À chaque clic, le bot modifie instantanément le message. Dès que le compte de joueurs atteint le maximum requis, le bot désactive les boutons et mentionne le créateur pour valider le départ.
 
@@ -36,7 +36,7 @@ Le projet repose intégralement sur **Cloudflare Workers (Serverless)**.
 
 ### 3. Enregistrement des Commandes Slash (API Discord)
 - [ ] Créer un script local `register.js` (indépendant du Worker).
-- [ ] Définir la structure JSON de la commande `/session` avec les options `mission`, `places`, et `date_heure` configurées avec `autocomplete: true`.
+- [ ] Définir la structure JSON de la commande `/session` avec les options `mission`, `jour`, et `heure` configurées avec `autocomplete: true`.
 - [ ] Définir la commande de modération (ex: `/catalogue_ajouter`) avec les restrictions de permissions (`default_member_permissions`).
 - [ ] Exécuter `node register.js` une seule fois pour pousser cette structure sur les serveurs de Discord.
 
