@@ -10,9 +10,7 @@ compatibility_date = "2026-11-10"
 # Safe to commit: it is public and only used to verify request signatures.
 DISCORD_PUBLIC_KEY = "acfa5cc75ca5332ee6746e925d09d69bc0b66d4a6c0a0b26e90c49beefac2241"
 
-# Mission catalog storage. Create the namespace first:
-#   npx wrangler kv namespace create CATALOGUE_KV --namespace-name-from-conf
-# then paste the printed id below.
+# Mission catalog storage.
 [[kv_namespaces]]
 binding = "CATALOGUE_KV"
-id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+id = "fea2c659a1d84ea48c5928098e2c055a"
