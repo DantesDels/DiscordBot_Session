@@ -6,11 +6,11 @@ node_modules/
 
 # Wrangler / Cloudflare
 .wrangler/
-.dev.vars
 
 # Environment & secrets
 .env
 .env.*
+!.env.example
 
 # TypeScript
 dist/
