@@ -148,6 +148,12 @@ function findDayHint(rest: string): DayHint {
   return { kind: 'none' };
 }
 
+/** Sliding window check: strictly after now, within the next 7 days. */
+export function isWithinWindow(unix: number, now: Date): boolean {
+  const nowSec = Math.floor(now.getTime() / 1000);
+  return unix > nowSec && unix <= nowSec + WINDOW_SECONDS;
+}
+
 /**
  * Parse a human shortcut into a UNIX timestamp (seconds), or null when the
  * input is unparseable or falls outside the sliding 7-day window.
@@ -160,10 +166,8 @@ export function parseDateTime(input: string, now: Date): number | null {
   const rest = s.replace(TIME_RE, ' ');
   const hint = findDayHint(rest);
 
-  const nowSec = Math.floor(now.getTime() / 1000);
   const nowParts = parisParts(now);
-  const inWindow = (unix: number): boolean =>
-    unix > nowSec && unix <= nowSec + WINDOW_SECONDS;
+  const inWindow = (unix: number): boolean => isWithinWindow(unix, now);
 
   const build = (p: WallClock): number =>
     Math.floor(parisToEpochMs(p.year, p.month, p.day, time.hour, time.minute) / 1000);
@@ -226,8 +230,7 @@ function suggestion(unix: number): DateSuggestion {
  */
 export function dateSuggestions(input: string, now: Date): DateSuggestion[] {
   const s = normalize(input);
-  const nowSec = Math.floor(now.getTime() / 1000);
-  const inWindow = (unix: number) => unix > nowSec && unix <= nowSec + WINDOW_SECONDS;
+  const inWindow = (unix: number) => isWithinWindow(unix, now);
 
   if (!s) {
     const nowParts = parisParts(now);

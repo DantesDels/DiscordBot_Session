@@ -1,5 +1,5 @@
 import { verifyKey } from 'discord-interactions';
-import { dateSuggestions, parseDateTime } from './lib/parseDate';
+import { dateSuggestions, parseDateTime, isWithinWindow } from './lib/parseDate';
 import {
   buildSessionComponents,
   buildSessionContent,
@@ -111,7 +111,19 @@ function handleSession(interaction: Interaction): Response {
   }
 
   const dateHeure = String(opts.get('date_heure') ?? '');
-  const unix = parseDateTime(dateHeure, new Date());
+  const now = new Date();
+  let unix: number | null;
+  if (/^\d+$/.test(dateHeure)) {
+    // Autocomplete sends the option VALUE back, not the displayed name: for
+    // date_heure the value is the already-resolved UNIX timestamp. Pure digits
+    // are therefore used as-is — but still re-validated against the sliding
+    // window, since a picked suggestion can go stale (submitted minutes
+    // later) or the user can type a raw timestamp by hand.
+    const candidate = Number(dateHeure);
+    unix = isWithinWindow(candidate, now) ? candidate : null;
+  } else {
+    unix = parseDateTime(dateHeure, now);
+  }
   if (unix === null) {
     return ephemeral(
       '❌ Date incomprise ou hors fenêtre (7 jours glissants, jamais dans le passé). ' +
