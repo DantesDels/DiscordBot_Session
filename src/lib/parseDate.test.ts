@@ -11,7 +11,13 @@ const utc = (day: number, hour: number, minute = 0): number =>
 describe('parseDateTime', () => {
   it('parses weekday shortcuts to the next upcoming occurrence', () => {
     expect(parseDateTime('jeu 20h', NOW)).toBe(utc(12, 20)); // Thursday Nov 12
-    expect(parseDateTime('sam 11h15', NOW)).toBe(utc(14, 11, 15)); // Saturday Nov 14
+    expect(parseDateTime('sam 11h15', NOW)).toBe(utc(14, 11, 0)); // snapped to 11:00
+  });
+
+  it('snaps hand-typed minutes down to the previous half-hour slot', () => {
+    expect(parseDateTime('demain 20h10', NOW)).toBe(utc(11, 20, 0));
+    expect(parseDateTime('demain 20h45', NOW)).toBe(utc(11, 20, 30));
+    expect(parseDateTime('demain 20h30', NOW)).toBe(utc(11, 20, 30)); // already aligned
   });
 
   it('uses today when the weekday matches and the time is still ahead', () => {
@@ -73,18 +79,32 @@ describe('isWithinWindow', () => {
 
 describe('dateSuggestions', () => {
   it('returns defaults when nothing is typed', () => {
-    const choices = dateSuggestions('  ', NOW);
-    expect(choices.length).toBeGreaterThan(0);
-    // All values are distinct, increasing timestamps inside the window.
+    const choices = dateSuggestions('  ', NOW); // NOW = Tue 13:00 Paris sharp
+    // 6 upcoming half-hour slots + today/tomorrow 20h/21h (deduplicated).
     const values = choices.map((c) => Number(c.value));
+    expect(values.length).toBeGreaterThan(0);
+    // All values are distinct, increasing timestamps inside the window.
     expect(new Set(values).size).toBe(values.length);
     expect(values).toEqual([...values].sort((a, b) => a - b));
     for (const v of values) {
       expect(v).toBeGreaterThan(Math.floor(NOW.getTime() / 1000));
+      // Every suggestion is aligned on a half-hour boundary.
+      expect(v % 1800).toBe(0);
     }
     expect(values[values.length - 1]).toBeLessThanOrEqual(
       Math.floor(NOW.getTime() / 1000) + 7 * 24 * 3600
     );
+  });
+
+  it('starts the default slots right after the current time', () => {
+    // A now at an odd time (13:47) still yields :00/:30-aligned slots.
+    const nowOdd = new Date(Date.UTC(2026, 10, 10, 12, 47)); // 13:47 Paris
+    const choices = dateSuggestions('', nowOdd);
+    const values = choices.map((c) => Number(c.value));
+    expect(values.length).toBeGreaterThan(0);
+    for (const v of values) expect(v % 1800).toBe(0);
+    // First slot is the next half hour: 14:00 Paris.
+    expect(choices[0].name).toMatch(/14:00/);
   });
 
   it('offers the next days too when only a time is given', () => {

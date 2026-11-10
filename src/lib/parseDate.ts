@@ -154,9 +154,16 @@ export function isWithinWindow(unix: number, now: Date): boolean {
   return unix > nowSec && unix <= nowSec + WINDOW_SECONDS;
 }
 
+/** Snap a UNIX timestamp (seconds) down to the previous half-hour slot. */
+function snapToHalfHour(unix: number): number {
+  return Math.floor(unix / 1800) * 1800;
+}
+
 /**
  * Parse a human shortcut into a UNIX timestamp (seconds), or null when the
  * input is unparseable or falls outside the sliding 7-day window.
+ * Results are snapped to half-hour slots (:00 / :30) — e.g. "20h10" becomes
+ * 20:00, "20h45" becomes 20:30.
  */
 export function parseDateTime(input: string, now: Date): number | null {
   const s = normalize(input);
@@ -170,7 +177,9 @@ export function parseDateTime(input: string, now: Date): number | null {
   const inWindow = (unix: number): boolean => isWithinWindow(unix, now);
 
   const build = (p: WallClock): number =>
-    Math.floor(parisToEpochMs(p.year, p.month, p.day, time.hour, time.minute) / 1000);
+    snapToHalfHour(
+      Math.floor(parisToEpochMs(p.year, p.month, p.day, time.hour, time.minute) / 1000)
+    );
 
   if (hint.kind === 'date') {
     // Try the current year, then the next one (for late-December inputs).
@@ -223,9 +232,11 @@ function suggestion(unix: number): DateSuggestion {
 
 /**
  * Autocomplete choices for the `date_heure` option.
- * - Empty input: popular defaults (today/tomorrow evening slots).
- * - Parseable input: the interpretation, plus tomorrow/day+2 alternates when
- *   no explicit day was given.
+ * Slots are aligned on half-hours (:00 and :30).
+ * - Empty input: the next half-hour slots across the coming hours, then
+ *   popular evening slots today/tomorrow.
+ * - Parseable input: the rounded interpretation, plus next-days alternates
+ *   when no explicit day was given.
  * - Unparseable input: no suggestion (the user is still typing).
  */
 export function dateSuggestions(input: string, now: Date): DateSuggestion[] {
@@ -235,6 +246,25 @@ export function dateSuggestions(input: string, now: Date): DateSuggestion[] {
   if (!s) {
     const nowParts = parisParts(now);
     const defaults: number[] = [];
+
+    // Next half-hour slots from "now" (e.g. 13:47 -> 14:00, 14:30, 15:00...).
+    // nowParts.minute is floored to 0 or 30, then advanced.
+    const floorMinute = nowParts.minute < 30 ? 0 : 30;
+    const firstSlotMs = parisToEpochMs(
+      nowParts.year,
+      nowParts.month,
+      nowParts.day,
+      nowParts.hour,
+      floorMinute
+    );
+    let cursor = firstSlotMs / 1000;
+    if (cursor < Math.floor(now.getTime() / 1000) + 60) cursor += 1800; // skip just-passed slot
+    for (let i = 0; i < 6; i++) {
+      if (inWindow(cursor)) defaults.push(cursor);
+      cursor += 1800;
+    }
+
+    // Popular evening slots today and tomorrow (if not already included).
     for (const delta of [0, 1]) {
       for (const hour of [20, 21]) {
         const unix = Math.floor(
@@ -246,7 +276,7 @@ export function dateSuggestions(input: string, now: Date): DateSuggestion[] {
             0
           ) / 1000
         );
-        if (inWindow(unix)) defaults.push(unix);
+        if (inWindow(unix) && !defaults.includes(unix)) defaults.push(unix);
       }
     }
     return defaults.sort((a, b) => a - b).map(suggestion);
