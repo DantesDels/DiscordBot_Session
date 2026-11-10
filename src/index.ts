@@ -10,6 +10,7 @@ import {
   parseSession,
 } from './lib/sessionMessage';
 import { missionChoices } from './lib/missionAutocomplete';
+import { addMission, removeMission, MAX_MISSION_LENGTH } from './lib/catalog';
 
 // Cloudflare bindings (see wrangler.toml).
 export interface Env {
@@ -18,7 +19,6 @@ export interface Env {
 }
 
 const MAX_PLACES = 6;
-const MAX_MISSION_LENGTH = 100;
 
 /** ------------------------------------------------------------------ *
  *  Discord interaction payloads (only the fields this bot reads).
@@ -196,6 +196,23 @@ async function handleAutocomplete(interaction: Interaction, env: Env): Promise<R
   return json({ type: 8, data: { choices } }); // APPLICATION_COMMAND_AUTOCOMPLETE_RESULT
 }
 
+/** `/catalogue_ajouter mission:<...>` and `/catalogue_retirer mission:<...>` (moderators). */
+async function handleCatalog(interaction: Interaction, command: string, env: Env): Promise<Response> {
+  const mission = String(options(interaction).get('mission') ?? '').trim();
+
+  if (command === 'catalogue_ajouter') {
+    const added = await addMission(env.CATALOGUE_KV, mission);
+    return added
+      ? ephemeral(`✅ Mission « ${mission} » ajoutée au catalogue.`)
+      : ephemeral(`❌ Nom de mission invalide (1 à ${MAX_MISSION_LENGTH} caractères).`);
+  }
+
+  const removed = await removeMission(env.CATALOGUE_KV, mission);
+  return removed
+    ? ephemeral(`🗑️ Mission « ${mission} » retirée du catalogue.`)
+    : ephemeral(`❌ Mission « ${mission} » introuvable dans le catalogue.`);
+}
+
 /** ------------------------------------------------------------------ *
  *  Worker entry point
  *  ------------------------------------------------------------------ */
@@ -227,12 +244,14 @@ export default {
 
     // TYPE 2: APPLICATION_COMMAND — slash command execution.
     if (interaction.type === 2) {
-      switch (interaction.data?.name) {
-        case 'session':
-          return handleSession(interaction);
-        default:
-          return ephemeral('❌ Commande inconnue.');
+      const command = interaction.data?.name ?? '';
+      if (command === 'session') {
+        return handleSession(interaction);
       }
+      if (command === 'catalogue_ajouter' || command === 'catalogue_retirer') {
+        return await handleCatalog(interaction, command, env);
+      }
+      return ephemeral('❌ Commande inconnue.');
     }
 
     // TYPE 3: MESSAGE_COMPONENT — Join / Leave buttons.
