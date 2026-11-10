@@ -1,24 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { buildSessionContent, parseSession } from './content';
-
-const CREATOR = '111';
-const ROLE_ID = '999';
-
-// Squad of 4: creator + 3 free slots.
-const base = buildSessionContent({
-  unix: 1794337200,
-  places: 4,
-  roleId: ROLE_ID,
-  creatorId: CREATOR,
-});
+import { buildSessionContent, parseSession } from '../../src/sessions/content';
+import { CREATOR, ROLE_ID, SESSION_BASE } from '../helpers';
 
 describe('buildSessionContent', () => {
   it('renders role ping, timestamps and slots — no mission name, no creator line', () => {
-    expect(base).toContain(`<@&${ROLE_ID}> — <t:1794337200:F> (<t:1794337200:R>)`);
-    expect(base).not.toContain('Créateur');
-    expect(base.startsWith(`<@&${ROLE_ID}>`)).toBe(true);
+    expect(SESSION_BASE).toContain(`<@&${ROLE_ID}> — <t:1794337200:F> (<t:1794337200:R>)`);
+    expect(SESSION_BASE).not.toContain('Créateur');
+    expect(SESSION_BASE.startsWith(`<@&${ROLE_ID}>`)).toBe(true);
 
-    const view = parseSession(base);
+    const view = parseSession(SESSION_BASE);
     expect(view.players).toEqual([CREATOR]); // first player = creator
     expect(view.free).toBe(3); // 4 places, creator occupies one
     expect(view.slots).toBe(4);

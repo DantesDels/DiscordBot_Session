@@ -1,24 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { buildSessionContent, parseSession } from './content';
-import { joinSession, leaveSession } from './membership';
-
-const CREATOR = '111';
-const PLAYER_A = '222';
-const PLAYER_B = '333';
-const PLAYER_C = '444';
-const ROLE_ID = '999';
-
-// Squad of 4: creator + 3 free slots.
-const base = buildSessionContent({
-  unix: 1794337200,
-  places: 4,
-  roleId: ROLE_ID,
-  creatorId: CREATOR,
-});
+import { parseSession } from '../../src/sessions/content';
+import { joinSession, leaveSession } from '../../src/sessions/membership';
+import { CREATOR, PLAYER_A, PLAYER_B, PLAYER_C, SESSION_BASE } from '../helpers';
 
 describe('joinSession / leaveSession', () => {
   it('fills the first free slot in order', () => {
-    const first = joinSession(base, PLAYER_A);
+    const first = joinSession(SESSION_BASE, PLAYER_A);
     expect(first.ok).toBe(true);
     const view = parseSession((first as { content: string }).content);
     expect(view.players).toEqual([CREATOR, PLAYER_A]);
@@ -27,12 +14,12 @@ describe('joinSession / leaveSession', () => {
   });
 
   it('rejects joining twice', () => {
-    const once = joinSession(base, PLAYER_A) as { content: string };
+    const once = joinSession(SESSION_BASE, PLAYER_A) as { content: string };
     expect(joinSession(once.content, PLAYER_A)).toEqual({ ok: false, reason: 'already-joined' });
   });
 
   it('appends the completion banner pinging the creator (first player) when the squad fills up', () => {
-    const a = (joinSession(base, PLAYER_A) as { content: string }).content;
+    const a = (joinSession(SESSION_BASE, PLAYER_A) as { content: string }).content;
     const b = (joinSession(a, PLAYER_B) as { content: string }).content;
     const c = joinSession(b, PLAYER_C) as { content: string };
     expect(c.content).toContain('✅ **Escouade complète**');
@@ -41,14 +28,14 @@ describe('joinSession / leaveSession', () => {
   });
 
   it('rejects joining a full squad', () => {
-    const a = (joinSession(base, PLAYER_A) as { content: string }).content;
+    const a = (joinSession(SESSION_BASE, PLAYER_A) as { content: string }).content;
     const b = (joinSession(a, PLAYER_B) as { content: string }).content;
     const c = (joinSession(b, PLAYER_C) as { content: string }).content;
     expect(joinSession(c, '555')).toEqual({ ok: false, reason: 'squad-full' });
   });
 
   it('frees the slot and removes the banner on leave', () => {
-    const a = (joinSession(base, PLAYER_A) as { content: string }).content;
+    const a = (joinSession(SESSION_BASE, PLAYER_A) as { content: string }).content;
     const b = (joinSession(a, PLAYER_B) as { content: string }).content;
     const c = (joinSession(b, PLAYER_C) as { content: string }).content;
     const left = leaveSession(c, PLAYER_A) as { content: string };
@@ -60,6 +47,6 @@ describe('joinSession / leaveSession', () => {
   });
 
   it('rejects leaving when not registered', () => {
-    expect(leaveSession(base, PLAYER_B)).toEqual({ ok: false, reason: 'not-joined' });
+    expect(leaveSession(SESSION_BASE, PLAYER_B)).toEqual({ ok: false, reason: 'not-joined' });
   });
 });

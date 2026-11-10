@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { isWithinWindow } from './window';
-
-// Fixed reference: Tuesday, November 10, 2026, 12:00 UTC = 13:00 Paris (CET, UTC+1).
-const NOW = new Date(Date.UTC(2026, 10, 10, 12, 0));
+import { isWithinWindow } from '../../src/time/window';
+import { NOW } from '../helpers';
 
 describe('isWithinWindow', () => {
   const nowSec = Math.floor(NOW.getTime() / 1000);

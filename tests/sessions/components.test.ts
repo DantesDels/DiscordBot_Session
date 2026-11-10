@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { buildSessionComponents, CUSTOM_ID_JOIN, CUSTOM_ID_LEAVE } from './components';
+import {
+  buildSessionComponents,
+  CUSTOM_ID_JOIN,
+  CUSTOM_ID_LEAVE,
+} from '../../src/sessions/components';
 
 describe('buildSessionComponents', () => {
   it('disables both buttons while the squad is full', () => {

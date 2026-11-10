@@ -1,14 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { timeSuggestions } from './timeSuggestions';
-import { isWithinWindow } from './window';
-import { parseDayTime } from './combine';
-
-// Fixed reference: Tuesday, November 10, 2026, 12:00 UTC = 13:00 Paris (CET, UTC+1).
-const NOW = new Date(Date.UTC(2026, 10, 10, 12, 0));
-
-// November 2026 Paris time is UTC+1, so Paris hh:mm = UTC (hh-1):mm.
-const utc = (day: number, hour: number, minute = 0): number =>
-  Math.floor(Date.UTC(2026, 10, day, hour - 1, minute) / 1000);
+import { timeSuggestions } from '../../src/time/timeSuggestions';
+import { isWithinWindow } from '../../src/time/window';
+import { parseDayTime } from '../../src/time/combine';
+import { NOW, utc } from '../helpers';
 
 describe('timeSuggestions', () => {
   it('offers the next 24h hourly by default, so the whole range is visible', () => {
