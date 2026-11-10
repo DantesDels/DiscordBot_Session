@@ -179,6 +179,8 @@ Tout passe par le `fetch` handler de `src/index.ts`, après vérification de la 
 
 ### Variables d'environnement (`.env`, git-ignoré)
 
+Modèle : `config/.env.example` (à copier en `.env` à la racine). Le Worker n'a besoin que de `DISCORD_PUBLIC_KEY` (déjà dans `wrangler.toml` `[vars]`) ; les scripts locaux lisent le reste.
+
 | Variable | Usage |
 |---|---|
 | `DISCORD_APP_ID` | ID de l'application Discord (enregistrement des commandes) |
