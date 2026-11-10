@@ -6,10 +6,12 @@
  *   names over the sliding 7-day window. The option VALUE is a UNIX
  *   timestamp of that day at 00:00 Paris time (so any time on that day,
  *   snapped to half-hours, stays within the same calendar day).
- * - `heure` (time): autocomplete proposes half-hour slots. When `jour` is
- *   already filled, the next 24 hours are offered by 30-minute steps from
- *   the current time; otherwise slots start from today 00:00 (bounded by
- *   the window).
+ * - `heure` (time): autocomplete covers the WHOLE range — hourly by
+ *   default (24 choices fit Discord's 25-choice cap), switching to
+ *   30-minute steps as soon as the user types a time ("20", "20h30").
+ *   With `jour` = today (or not chosen yet) the range is the next 24h from
+ *   now (crossing midnight, labelled "(demain)"); otherwise it is the
+ *   selected day in full.
  *
  * Wall-clock reasoning happens in Europe/Paris (the bot's audience);
  * results are UNIX timestamps for Discord `<t:X:F>` / `<t:X:R>` tags.
@@ -26,6 +28,8 @@ export interface DateSuggestion {
 const PARIS_TZ = 'Europe/Paris';
 const WINDOW_SECONDS = 7 * 24 * 60 * 60;
 const HALF_HOUR = 1800; // seconds
+const HOUR_SECONDS = 3600;
+const DAY_SECONDS = 86400;
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 
@@ -239,6 +243,8 @@ export function daySuggestions(input: string, now: Date): DateSuggestion[] {
 // Time options (heure)
 // ---------------------------------------------------------------------------
 
+const MAX_CHOICES = 25; // Discord hard limit on autocomplete choices
+
 /** Format a UNIX timestamp as a Paris-local time label (e.g. "20:30"). */
 function timeLabel(unix: number): string {
   return new Intl.DateTimeFormat('fr-FR', {
@@ -249,14 +255,44 @@ function timeLabel(unix: number): string {
 }
 
 /**
+ * Parse what the user typed into the `heure` option:
+ * - explicit clock text: "20h", "20h30", "20:30", "20 h 30";
+ * - bare digits, autocomplete prefix style: "20" (20:00), "2030" / "930"
+ *   (20:30 / 9:30).
+ * Returns null for non-time text (user still typing -> default list) and
+ * 'invalid' for impossible clock values (hour > 23 or minute > 59).
+ */
+function parseTypedTime(q: string): { hour: number; minute: number } | 'invalid' | null {
+  let hour: number;
+  let minute: number;
+  const m = TIME_RE.exec(q);
+  if (m) {
+    hour = Number(m[1]);
+    minute = m[2] === undefined ? 0 : Number(m[2]);
+  } else if (/^\d{1,4}$/.test(q)) {
+    hour = Number(q.length <= 2 ? q : q.slice(0, -2));
+    minute = q.length <= 2 ? 0 : Number(q.slice(-2));
+  } else {
+    return null;
+  }
+  if (hour > 23 || minute > 59) return 'invalid';
+  return { hour, minute };
+}
+
+/**
  * Autocomplete choices for the `heure` option, given the selected day
  * (timestamp of that day at 00:00 Paris, from the `jour` option value).
- * - With a day: all remaining half-hour slots on that day; if the day is
- *   today (or the day value is absent), the next 24h are offered from the
- *   current time.
- * - Hand-typed time (e.g. "20h", "20:30"): that slot, snapped to half-hours,
- *   validated against the window.
- * Discord caps autocomplete at 25 choices: the EARLIEST 25 slots are kept.
+ *
+ * The WHOLE range is always visible: hourly slots by default (24 choices,
+ * which fits Discord's 25-choice cap where 48 half-hour slots would not).
+ * Typing a time ("20", "20h30") switches the list to half-hour steps
+ * starting at the typed slot, minutes snapped down to :00 / :30.
+ *
+ * Range: the next 24h from now when the day is today or not chosen yet
+ * (crossing midnight, those slots are labelled "(demain)"), the selected
+ * day in full otherwise. A past time typed for today rolls to the same
+ * time tomorrow ("8h" typed in the evening means the coming 08:00), so
+ * every suggested slot is submittable.
  */
 export function timeSuggestions(
   input: string,
@@ -271,39 +307,35 @@ export function timeSuggestions(
     ? Number(dayTimestamp)
     : today;
   const isToday = dayStart === today;
+  // +1s so the slot exactly 24h from now is included (still valid); for a
+  // selected day the limit is next midnight and stays exclusive.
+  const limit = isToday ? nowSec + 24 * HOUR_SECONDS + 1 : dayStart + DAY_SECONDS;
 
-  // Slot range on the selected day: from max(day start, next slot after now)
-  // up to 24h after the day start (or after now when today).
-  const start = isToday
-    ? Math.max(snapToHalfHour(nowSec), nowSec)
-    : dayStart;
-  const limit = isToday ? nowSec + 24 * 3600 : dayStart + 24 * 3600;
+  const typed = parseTypedTime(q);
+  if (typed === 'invalid') return [];
 
-  // Hand-typed time: build slots starting at the typed (snapped) time.
-  let first = start;
-  const timeMatch = TIME_RE.exec(q);
-  if (timeMatch) {
-    const hour = Number(timeMatch[1]);
-    const minute = timeMatch[2] === undefined ? 0 : Number(timeMatch[2]);
-    if (hour > 23 || minute > 59) return [];
-    // Wall-clock on the selected day: dayStart is midnight Paris, so add
-    // the time of day directly (both are wall-clock seconds).
-    const typed = dayStart + hour * 3600 + Math.floor(minute / 30) * 30 * 60;
-    if (isToday && typed <= nowSec) {
-      // Past slot typed today: offer the upcoming slots instead.
-      first = start;
-    } else {
-      first = typed;
-    }
+  let first: number;
+  let step: number;
+  if (typed) {
+    const slot =
+      dayStart + typed.hour * HOUR_SECONDS + Math.floor(typed.minute / 30) * HALF_HOUR;
+    first = isToday && slot <= nowSec ? slot + DAY_SECONDS : slot;
+    step = HALF_HOUR;
+  } else {
+    first = isToday ? Math.ceil(nowSec / HOUR_SECONDS) * HOUR_SECONDS : dayStart;
+    step = HOUR_SECONDS;
   }
 
   const out: DateSuggestion[] = [];
-  for (let t = snapToHalfHour(first); t < limit; t += HALF_HOUR) {
-    if (t > nowSec && isWithinWindow(t, now)) {
-      out.push({ name: timeLabel(t), value: String(t) });
-    }
+  for (let t = first; t < limit && out.length < MAX_CHOICES; t += step) {
+    if (t <= nowSec || !isWithinWindow(t, now)) continue;
+    const isNextDay = isToday && startOfDay(new Date(t * 1000)) !== today;
+    out.push({
+      name: isNextDay ? `${timeLabel(t)} (demain)` : timeLabel(t),
+      value: String(t),
+    });
   }
-  return out.slice(0, 25); // Discord hard limit
+  return out;
 }
 
 /** Parse a full datetime from separate day and time option values. */
@@ -318,9 +350,14 @@ export function parseDayTime(dayValue: string, timeValue: string, now: Date): nu
   // midnight (`day` is midnight Paris). Pure second arithmetic works for
   // CET/CEST dates without DST transitions at the boundaries we use.
   const timeOfDay = time - startOfDay(new Date(time * 1000));
-  if (timeOfDay < 0 || timeOfDay > 86400 - HALF_HOUR) return null;
+  if (timeOfDay < 0 || timeOfDay > DAY_SECONDS - HALF_HOUR) return null;
 
-  const unix = day + timeOfDay;
+  let unix = day + timeOfDay;
+  // `jour` = today + a post-midnight slot from the next-24h list ("01:30")
+  // means the coming night: roll the same-day occurrence to tomorrow, so
+  // a clicked suggestion always validates.
+  if (unix <= Math.floor(now.getTime() / 1000)) unix += DAY_SECONDS;
+
   return isWithinWindow(unix, now) ? unix : null;
 }
 
