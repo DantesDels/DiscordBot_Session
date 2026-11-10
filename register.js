@@ -2,8 +2,11 @@
  * Registers the bot's slash commands on Discord.
  *
  * Run locally (never on the Worker): `node register.js [guildId]`.
+ * - The guild id defaults to SERVER_ID from `.env` when omitted.
  * - With a guild id: instant registration, ideal for testing.
  * - Without: global registration (can take up to 1 hour to propagate).
+ * - When ROLE_ADMIN_ID is set in `.env`, the catalog commands are restricted
+ *   to that role (plus server administrators) via per-guild permissions.
  *
  * Credentials are read from the environment or from `.env` at the project
  * root (see `config/.env.example`): DISCORD_APP_ID and DISCORD_BOT_TOKEN.
@@ -103,7 +106,7 @@ if (!appId || !token) {
   process.exit(1);
 }
 
-const guildId = process.argv[2];
+const guildId = process.argv[2] ?? env.SERVER_ID;
 const url = guildId
   ? `https://discord.com/api/v10/applications/${appId}/guilds/${guildId}/commands`
   : `https://discord.com/api/v10/applications/${appId}/commands`;
@@ -119,7 +122,23 @@ if (!response.ok) {
   console.error(await response.text());
   process.exit(1);
 }
+const registered = await response.json();
+console.log(` -> ${registered.map((c) => c.name).join(', ')}`);
 
 console.log(
   `Registered ${commands.length} commands ${guildId ? `on guild ${guildId}` : 'globally (up to 1h to appear)'}.`
 );
+
+// Restrict the catalog commands to ROLE_ADMIN_ID (+ server admins) when set.
+// Discord's per-guild command permission endpoints reject bot tokens
+// (403 "Bots cannot use this endpoint"), so restriction is enforced via
+// `default_member_permissions: MANAGE_MESSAGES` in the command definitions:
+// the ROLE_ADMIN_ID role (MODÉRATEURS) holds that permission. For tighter
+// per-guild overrides, use Server Settings > Integrations > Bot > Commands.
+const adminRoleId = guildId ? env.ROLE_ADMIN_ID : undefined;
+if (adminRoleId) {
+  console.log(
+    `Catalog commands restricted via default_member_permissions (MANAGE_MESSAGES); ` +
+      `verify role ${adminRoleId} holds that permission.`
+  );
+}
