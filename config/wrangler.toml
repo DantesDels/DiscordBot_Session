@@ -1,0 +1,16 @@
+# Cloudflare Worker configuration.
+# See https://developers.cloudflare.com/workers/wrangler/configuration/
+
+name = "discordbot-session"
+main = "../src/index.ts"
+compatibility_date = "2026-11-10"
+
+[vars]
+# Discord application public key (Developer Portal > Application > General).
+# Safe to commit: it is public and only used to verify request signatures.
+DISCORD_PUBLIC_KEY = "acfa5cc75ca5332ee6746e925d09d69bc0b66d4a6c0a0b26e90c49beefac2241"
+
+# Mission catalog storage.
+[[kv_namespaces]]
+binding = "CATALOGUE_KV"
+id = "fea2c659a1d84ea48c5928098e2c055a"

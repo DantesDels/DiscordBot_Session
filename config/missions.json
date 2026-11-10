@@ -1,0 +1,25 @@
+{
+  "_comment": "Mission catalog for the /session command. Sync to Cloudflare KV with: npm run catalog:sync. Each entry: name (autocomplete label), role_id (Discord role pinged when a session is created — the role stands for the mission in the session message), slots (recommended squad size, 4 or 6, starred in the places autocomplete).",
+  "missions": [
+    {
+      "name": "Arbitrage",
+      "role_id": "1569507016454570084",
+      "slots": 4
+    },
+    {
+      "name": "Cryobell",
+      "role_id": "1569505804212772864",
+      "slots": 6
+    },
+        {
+      "name": "Archimédée Profonde (Deimos)",
+      "role_id": "1569507389114286241",
+      "slots": 4
+    },
+    {
+      "name": "Archimédée Temporelle (1999)",
+      "role_id": "1569506647326326865",
+      "slots": 4
+    }
+  ]
+}
