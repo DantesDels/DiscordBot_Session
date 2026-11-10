@@ -1,11 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import {
-  buildSessionContent,
-  buildSessionComponents,
-  parseSession,
-  joinSession,
-  leaveSession,
-} from './sessionMessage';
+import { buildSessionContent, parseSession } from './content';
+import { joinSession, leaveSession } from './membership';
 
 const CREATOR = '111';
 const PLAYER_A = '222';
@@ -19,29 +14,6 @@ const base = buildSessionContent({
   places: 4,
   roleId: ROLE_ID,
   creatorId: CREATOR,
-});
-
-describe('buildSessionContent', () => {
-  it('renders role ping, timestamps and slots — no mission name, no creator line', () => {
-    expect(base).toContain(`<@&${ROLE_ID}> — <t:1794337200:F> (<t:1794337200:R>)`);
-    expect(base).not.toContain('Créateur');
-    expect(base.startsWith(`<@&${ROLE_ID}>`)).toBe(true);
-
-    const view = parseSession(base);
-    expect(view.players).toEqual([CREATOR]); // first player = creator
-    expect(view.free).toBe(3); // 4 places, creator occupies one
-    expect(view.slots).toBe(4);
-    expect(view.full).toBe(false);
-  });
-
-  it('renders exactly the requested number of slots for a squad of 6', () => {
-    const six = parseSession(
-      buildSessionContent({ unix: 1, places: 6, roleId: ROLE_ID, creatorId: CREATOR })
-    );
-    expect(six.slots).toBe(6);
-    expect(six.free).toBe(5);
-    expect(six.full).toBe(false);
-  });
 });
 
 describe('joinSession / leaveSession', () => {
@@ -89,19 +61,5 @@ describe('joinSession / leaveSession', () => {
 
   it('rejects leaving when not registered', () => {
     expect(leaveSession(base, PLAYER_B)).toEqual({ ok: false, reason: 'not-joined' });
-  });
-});
-
-describe('buildSessionComponents', () => {
-  it('disables both buttons while the squad is full', () => {
-    const enabled = buildSessionComponents(false) as Array<{
-      components: Array<{ custom_id: string; disabled: boolean }>;
-    }>;
-    const disabled = buildSessionComponents(true) as Array<{
-      components: Array<{ custom_id: string; disabled: boolean }>;
-    }>;
-    expect(enabled[0].components.every((c) => !c.disabled)).toBe(true);
-    expect(disabled[0].components.every((c) => c.disabled)).toBe(true);
-    expect(enabled[0].components.map((c) => c.custom_id)).toEqual(['session_join', 'session_leave']);
   });
 });

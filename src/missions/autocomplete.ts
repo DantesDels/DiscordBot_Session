@@ -1,20 +1,14 @@
 /**
- * Mission autocomplete from the KV catalog.
+ * Mission autocomplete: choices built from the KV catalog (see store.ts).
  *
- * Choices are built from the `missions` JSON blob (see catalog.ts): the
- * option NAME is the mission name and the VALUE is the same name — the
+ * The option NAME is the mission name and the VALUE is the same name — the
  * type-2 handler then resolves role/slots from the catalog. Matching is
  * accent-insensitive, prefixes ranked first.
  */
 
-import { getCatalogue, MissionConfig } from './catalog';
-
-export interface AutocompleteChoice {
-  name: string;
-  value: string;
-}
-
-const MAX_CHOICES = 25; // Discord hard limit for autocomplete choices
+import { getCatalogue } from './store';
+import { MissionConfig } from './model';
+import { AutocompleteChoice, MAX_AUTOCOMPLETE_CHOICES } from '../discord/choices';
 
 /** Lowercase and strip diacritics so "Breach" matches "Brèche". */
 function normalize(s: string): string {
@@ -41,6 +35,6 @@ export async function missionChoices(
   }
 
   return [...prefixed, ...included]
-    .slice(0, MAX_CHOICES)
+    .slice(0, MAX_AUTOCOMPLETE_CHOICES)
     .map((mission) => ({ name: mission.name, value: mission.name }));
 }
