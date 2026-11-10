@@ -8,7 +8,7 @@ compatibility_date = "2026-11-10"
 [vars]
 # Discord application public key (Developer Portal > Application > General).
 # Safe to commit: it is public and only used to verify request signatures.
-DISCORD_PUBLIC_KEY = "REPLACE_WITH_YOUR_DISCORD_PUBLIC_KEY"
+DISCORD_PUBLIC_KEY = "acfa5cc75ca5332ee6746e925d09d69bc0b66d4a6c0a0b26e90c49beefac2241"
 
 # Mission catalog storage. Create the namespace first:
 #   npx wrangler kv namespace create CATALOGUE_KV
