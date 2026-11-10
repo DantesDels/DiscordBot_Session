@@ -119,57 +119,78 @@ describe('daySuggestions', () => {
 });
 
 describe('timeSuggestions', () => {
-  it('offers the next 24h by half-hour steps, capped at 25 choices by Discord', () => {
+  it('offers the next 24h hourly by default, so the whole range is visible', () => {
     const choices = timeSuggestions('', NOW); // NOW = 13:00 Paris
-    expect(choices[0].name).toBe('13:30');
-    expect(choices[1].name).toBe('14:00');
-    // 24h of half-hour slots would be 47, but Discord caps at 25.
-    expect(choices).toHaveLength(25);
-    expect(choices[24].name).toBe('01:30'); // 13:30 + 24 slots
+    // 48 half-hour slots cannot fit Discord's 25-choice cap; hourly slots
+    // cover the full next 24h instead (14:00 today -> 13:00 tomorrow).
+    expect(choices).toHaveLength(24);
+    expect(choices[0].name).toBe('14:00');
+    expect(choices[23].name).toBe('13:00 (demain)');
     for (const c of choices) {
-      expect(Number(c.value) % 1800).toBe(0);
+      expect(Number(c.value) % 3600).toBe(0); // hourly by default
       expect(isWithinWindow(Number(c.value), NOW)).toBe(true);
     }
+    // Post-midnight slots are labelled so today/tomorrow is unambiguous.
+    expect(choices[10].name).toBe('00:00 (demain)');
   });
 
-  it('scopes slots to the selected day (tomorrow), capped at 25', () => {
+  it('covers the selected day hourly (tomorrow), without day labels', () => {
     const tomorrow = String(utc(11, 0)); // day value at 00:00 Paris
     const choices = timeSuggestions('', NOW, tomorrow);
+    expect(choices).toHaveLength(24);
     expect(choices[0].name).toBe('00:00');
-    // 48 slots on a full day, capped at 25 -> up to 12:00.
-    expect(choices).toHaveLength(25);
-    expect(choices[24].name).toBe('12:00');
+    expect(choices[23].name).toBe('23:00');
     for (const c of choices) {
+      expect(c.name).not.toContain('demain');
       expect(isWithinWindow(Number(c.value), NOW)).toBe(true);
     }
   });
 
-  it('starts today’s slots at the next half hour, not the past', () => {
+  it('starts today’s default list at the next full hour, not the past', () => {
     const today = String(utc(10, 0));
     const nowOdd = new Date(Date.UTC(2026, 10, 10, 12, 47)); // 13:47 Paris
     const choices = timeSuggestions('', nowOdd, today);
     expect(choices[0].name).toBe('14:00');
   });
 
-  it('snaps a hand-typed time and continues with later slots', () => {
+  it('switches to half-hour steps when a time is typed', () => {
     const tomorrow = String(utc(11, 0));
     const choices = timeSuggestions('20h10', NOW, tomorrow);
-    expect(choices[0].name).toBe('20:00');
+    expect(choices[0].name).toBe('20:00'); // 20h10 snapped down
     expect(choices[1].name).toBe('20:30');
     expect(choices[2].name).toBe('21:00');
   });
 
-  it('rejects an invalid hand-typed time', () => {
-    expect(timeSuggestions('25h', NOW)).toEqual([]);
-    // Unrecognized text falls back to the default upcoming slots (the user
-    // is still typing) rather than an empty menu.
-    expect(timeSuggestions('xx', NOW)[0].name).toBe('13:30');
+  it('accepts bare digits as a typed time (autocomplete prefix style)', () => {
+    const choices = timeSuggestions('20', NOW); // no day selected
+    expect(choices[0].name).toBe('20:00');
+    expect(choices[1].name).toBe('20:30');
+    const withMinutes = timeSuggestions('2030', NOW);
+    expect(withMinutes[0].name).toBe('20:30');
   });
 
-  it('falls back to upcoming slots when a past time is typed today', () => {
+  it('rolls a past time typed today to the same time tomorrow', () => {
     const today = String(utc(10, 0)); // NOW = 13:00
     const choices = timeSuggestions('8h', NOW, today);
-    expect(choices[0].name).toBe('13:30'); // not 08:00 (in the past)
+    expect(choices[0].name).toBe('08:00 (demain)');
+    expect(choices[1].name).toBe('08:30 (demain)');
+  });
+
+  it('rejects an impossible hand-typed time', () => {
+    expect(timeSuggestions('25h', NOW)).toEqual([]);
+    expect(timeSuggestions('25', NOW)).toEqual([]);
+    // Unrecognized text falls back to the default upcoming slots (the user
+    // is still typing) rather than an empty menu.
+    expect(timeSuggestions('xx', NOW)[0].name).toBe('14:00');
+  });
+
+  it('makes every suggested slot submittable with jour = today', () => {
+    // Every choice value must resolve, via parseDayTime, to exactly that
+    // slot — including post-midnight ones, which roll to tomorrow.
+    const today = String(utc(10, 0));
+    for (const choice of timeSuggestions('', NOW, today)) {
+      expect(parseDayTime(today, choice.value, NOW)).toBe(Number(choice.value));
+    }
   });
 });
 
@@ -187,9 +208,18 @@ describe('parseDayTime', () => {
     expect(parseDayTime(String(utc(20, 0)), String(utc(10, 23, 30)), NOW)).toBeNull();
   });
 
-  it('rejects a time that has already passed on the selected day', () => {
+  it('rolls a same-day slot that has already passed to tomorrow', () => {
+    // A stale suggestion (picked then submitted minutes later) must still
+    // resolve — to the coming occurrence, never to a past timestamp.
     const today = String(utc(10, 0)); // NOW = 13:00
-    expect(parseDayTime(today, String(utc(10, 8, 30)), NOW)).toBeNull();
+    expect(parseDayTime(today, String(utc(10, 8, 30)), NOW)).toBe(utc(11, 8, 30));
     expect(parseDayTime(today, String(utc(10, 20, 30)), NOW)).toBe(utc(10, 20, 30));
+  });
+
+  it('resolves a post-midnight slot picked with jour = today to the coming night', () => {
+    // "01:00 (demain)" suggested under Aujourd'hui: the value is tomorrow's
+    // 01:00; combining it with today's midnight rolls to exactly that slot.
+    const today = String(utc(10, 0));
+    expect(parseDayTime(today, String(utc(11, 1, 0)), NOW)).toBe(utc(11, 1, 0));
   });
 });
