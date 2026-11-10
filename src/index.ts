@@ -231,7 +231,10 @@ export default {
       return new Response('Missing signature headers', { status: 401 });
     }
     const body = await request.text();
-    if (!verifyKey(body, signature, timestamp, env.DISCORD_PUBLIC_KEY)) {
+    // discord-interactions v4: verifyKey is async — it MUST be awaited,
+    // otherwise the returned Promise is truthy and every request passes.
+    const isValidRequest = await verifyKey(body, signature, timestamp, env.DISCORD_PUBLIC_KEY);
+    if (!isValidRequest) {
       return new Response('Bad request signature', { status: 401 });
     }
 
