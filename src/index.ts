@@ -101,25 +101,20 @@ function userId(interaction: Interaction): string | undefined {
  *  Slash commands
  *  ------------------------------------------------------------------ */
 
-/** `/session mission:<catalogue> places:<1-6> date_heure:<shortcut>` — role comes from the catalog. */
+/** `/session mission:<catalogue> date_heure:<shortcut>` — role AND squad size come from the catalog. */
 async function handleSession(interaction: Interaction, env: Env): Promise<Response> {
   const opts = options(interaction);
 
   // Mission must exist in the catalog: it carries the role to ping and the
-  // recommended squad size. Zero manual input = zero typos.
+  // squad size. Zero manual input = zero typos. getCatalogue() guarantees
+  // mission.slots is a valid size (ALLOWED_SLOTS).
   const missionName = String(opts.get('mission') ?? '').trim();
   const catalogue = await getCatalogue(env.CATALOGUE_KV);
   const mission = findMission(catalogue, missionName);
   if (!mission) {
     return ephemeral('❌ Mission introuvable dans le catalogue. Choisis-la via l’autocomplétion.');
   }
-
-  const places = Number(opts.get('places'));
-  if (!Number.isInteger(places) || !(ALLOWED_SLOTS as readonly number[]).includes(places)) {
-    return ephemeral(
-      `❌ Le nombre de places doit être ${ALLOWED_SLOTS.join(' ou ')}.`
-    );
-  }
+  const places = mission.slots;
 
   const dateHeure = String(opts.get('date_heure') ?? '');
   const now = new Date();
@@ -205,23 +200,9 @@ async function handleAutocomplete(interaction: Interaction, env: Env): Promise<R
     choices = await missionChoices(env.CATALOGUE_KV, String(option.value ?? ''));
   } else if (option.name === 'date_heure') {
     choices = dateSuggestions(String(option.value ?? ''), new Date());
-  } else if (option.name === 'places') {
-    // All options the user has already filled are present in
-    // interaction.data.options — read the selected mission to recommend its
-    // configured squad size (starred and ranked first). Only 4 or 6.
-    const catalogue = await getCatalogue(env.CATALOGUE_KV);
-    const missionName = String(options(interaction).get('mission') ?? '');
-    const mission = missionName ? findMission(catalogue, missionName) : undefined;
-
-    const sizes = mission
-      ? [mission.slots, ...ALLOWED_SLOTS.filter((s) => s !== mission.slots)]
-      : [...ALLOWED_SLOTS];
-    choices = sizes.map((n) =>
-      mission && mission.slots === n
-        ? { name: `⭐ ${n} joueurs (recommandé)`, value: n }
-        : { name: `${n} joueurs`, value: n }
-    );
   } else {
+    // The `places` option no longer exists on /session: the squad size is
+    // the mission's configured `slots` (see handleSession).
     choices = [];
   }
 
