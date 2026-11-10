@@ -19,7 +19,7 @@ const MANAGE_MESSAGES = '8192'; // Discord permission bit, moderators by default
 const commands = [
   {
     name: 'session',
-    description: 'Créer une session de jeu (mission, date)',
+    description: 'Créer une session de jeu (mission, jour, heure)',
     options: [
       {
         name: 'mission',
@@ -29,8 +29,15 @@ const commands = [
         autocomplete: true,
       },
       {
-        name: 'date_heure',
-        description: 'Date et heure — ex : jeu 20h, demain 18h30, 12/11 21h',
+        name: 'jour',
+        description: 'Jour de la session — aujourd’hui, demain, ou dans les 7 jours',
+        type: 3, // STRING
+        required: true,
+        autocomplete: true,
+      },
+      {
+        name: 'heure',
+        description: 'Heure de la session — créneaux toutes les 30 minutes',
         type: 3, // STRING
         required: true,
         autocomplete: true,
