@@ -10,44 +10,37 @@ import {
 const CREATOR = '111';
 const PLAYER_A = '222';
 const PLAYER_B = '333';
+const PLAYER_C = '444';
+const ROLE_ID = '999';
 
+// Squad of 4: creator + 3 free slots.
 const base = buildSessionContent({
-  mission: 'Opération Brèche',
   unix: 1794337200,
-  places: 3,
-  roleId: '999',
+  places: 4,
+  roleId: ROLE_ID,
   creatorId: CREATOR,
 });
 
 describe('buildSessionContent', () => {
-  it('renders role ping, timestamps, creator and the right number of slots', () => {
-    expect(base).toContain('<@&999> **Opération Brèche**');
-    expect(base).toContain('<t:1794337200:F> (<t:1794337200:R>)');
-    expect(base).toContain(`👤 Créateur : <@${CREATOR}>`);
+  it('renders role ping, timestamps and slots — no mission name, no creator line', () => {
+    expect(base).toContain(`<@&${ROLE_ID}> — <t:1794337200:F> (<t:1794337200:R>)`);
+    expect(base).not.toContain('Créateur');
+    expect(base.startsWith(`<@&${ROLE_ID}>`)).toBe(true);
 
     const view = parseSession(base);
-    expect(view.players).toEqual([CREATOR]);
-    expect(view.free).toBe(2); // 3 places, creator occupies one
-    expect(view.slots).toBe(3);
+    expect(view.players).toEqual([CREATOR]); // first player = creator
+    expect(view.free).toBe(3); // 4 places, creator occupies one
+    expect(view.slots).toBe(4);
     expect(view.full).toBe(false);
   });
 
-  it('omits the role ping when no role is given', () => {
-    const noRole = buildSessionContent({
-      mission: 'M',
-      unix: 1,
-      places: 2,
-      creatorId: CREATOR,
-    });
-    expect(noRole.startsWith('**M**')).toBe(true);
-  });
-
-  it('marks a single-place squad as full immediately', () => {
-    const solo = parseSession(
-      buildSessionContent({ mission: 'M', unix: 1, places: 1, creatorId: CREATOR })
+  it('renders exactly the requested number of slots for a squad of 6', () => {
+    const six = parseSession(
+      buildSessionContent({ unix: 1, places: 6, roleId: ROLE_ID, creatorId: CREATOR })
     );
-    expect(solo.free).toBe(0);
-    expect(solo.full).toBe(true);
+    expect(six.slots).toBe(6);
+    expect(six.free).toBe(5);
+    expect(six.full).toBe(false);
   });
 });
 
@@ -57,7 +50,7 @@ describe('joinSession / leaveSession', () => {
     expect(first.ok).toBe(true);
     const view = parseSession((first as { content: string }).content);
     expect(view.players).toEqual([CREATOR, PLAYER_A]);
-    expect(view.free).toBe(1);
+    expect(view.free).toBe(2);
     expect(view.full).toBe(false);
   });
 
@@ -66,27 +59,30 @@ describe('joinSession / leaveSession', () => {
     expect(joinSession(once.content, PLAYER_A)).toEqual({ ok: false, reason: 'already-joined' });
   });
 
-  it('appends the completion banner mentioning the creator when the squad fills up', () => {
+  it('appends the completion banner pinging the creator (first player) when the squad fills up', () => {
     const a = (joinSession(base, PLAYER_A) as { content: string }).content;
-    const b = joinSession(a, PLAYER_B) as { content: string };
-    expect(b.content).toContain('✅ **Escouade complète**');
-    expect(b.content).toContain(`<@${CREATOR}> à toi de jouer`);
-    expect(parseSession(b.content).full).toBe(true);
+    const b = (joinSession(a, PLAYER_B) as { content: string }).content;
+    const c = joinSession(b, PLAYER_C) as { content: string };
+    expect(c.content).toContain('✅ **Escouade complète**');
+    expect(c.content).toContain(`<@${CREATOR}> à toi de jouer`);
+    expect(parseSession(c.content).full).toBe(true);
   });
 
   it('rejects joining a full squad', () => {
     const a = (joinSession(base, PLAYER_A) as { content: string }).content;
     const b = (joinSession(a, PLAYER_B) as { content: string }).content;
-    expect(joinSession(b, '444')).toEqual({ ok: false, reason: 'squad-full' });
+    const c = (joinSession(b, PLAYER_C) as { content: string }).content;
+    expect(joinSession(c, '555')).toEqual({ ok: false, reason: 'squad-full' });
   });
 
   it('frees the slot and removes the banner on leave', () => {
     const a = (joinSession(base, PLAYER_A) as { content: string }).content;
     const b = (joinSession(a, PLAYER_B) as { content: string }).content;
-    const left = leaveSession(b, PLAYER_A) as { content: string };
+    const c = (joinSession(b, PLAYER_C) as { content: string }).content;
+    const left = leaveSession(c, PLAYER_A) as { content: string };
     const view = parseSession(left.content);
     expect(left.content).not.toContain('Escouade complète');
-    expect(view.players).toEqual([CREATOR, PLAYER_B]);
+    expect(view.players).toEqual([CREATOR, PLAYER_B, PLAYER_C]);
     expect(view.free).toBe(1);
     expect(view.full).toBe(false);
   });

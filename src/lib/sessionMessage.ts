@@ -4,17 +4,19 @@
  * The Discord message text itself is the bot's storage (see README: no
  * database). A session message looks like:
  *
- *   <@&123> **Opération Brèche** — <t:1759...:F> (<t:1759...:R>)
- *   👤 Créateur : <@456>
- *   ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+ *   <@&123> — <t:1759...:F> (<t:1759...:R>)
+ *   ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
  *   ⚔️ <@456>
  *   [ Vide ]
  *
  * Conventions used by the parser:
- * - A line `⚔️ <@USER_ID>` is an occupied slot.
+ * - The role ping stands for the mission (no mission name in the message).
+ * - A line `⚔️ <@USER_ID>` is an occupied slot. The FIRST occupied slot is
+ *   the session creator.
  * - A line exactly `[ Vide ]` is a free slot.
  * - A line starting with `✅ **Escouade complète**` is the "squad full"
  *   banner, present only while the squad is complete.
+ * - Squad sizes are 4 or 6 (see catalog.ts ALLOWED_SLOTS).
  */
 
 export const FREE_SLOT = '[ Vide ]';
@@ -25,15 +27,14 @@ const PLAYER_LINE_RE = /^⚔️ <@(\d+)>$/;
 const BANNER_PREFIX = '✅ **Escouade complète**';
 
 export interface SessionInit {
-  mission: string;
   unix: number; // seconds
-  places: number; // total squad size (creator included), 1..6
-  roleId?: string;
+  places: number; // total squad size (creator included): 4 or 6
+  roleId: string;
   creatorId: string;
 }
 
 export interface SessionView {
-  players: string[]; // user ids, in slot order
+  players: string[]; // user ids, in slot order (players[0] is the creator)
   free: number;
   slots: number;
   full: boolean;
@@ -45,11 +46,10 @@ export type SessionUpdateResult =
 
 /** Build the initial session message content. */
 export function buildSessionContent(init: SessionInit): string {
-  const role = init.roleId ? `<@&${init.roleId}> ` : '';
-  const header = `${role}**${init.mission}** — <t:${init.unix}:F> (<t:${init.unix}:R>)`;
+  const header = `<@&${init.roleId}> — <t:${init.unix}:F> (<t:${init.unix}:R>)`;
   const slots: string[] = [`⚔️ <@${init.creatorId}>`];
   for (let i = 1; i < init.places; i++) slots.push(FREE_SLOT);
-  return [header, `👤 Créateur : <@${init.creatorId}>`, '▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔', ...slots].join('\n');
+  return [header, '▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔', ...slots].join('\n');
 }
 
 /** Parse a session message content into its player/slot state. */
@@ -89,17 +89,6 @@ export function buildSessionComponents(full: boolean): unknown[] {
   ];
 }
 
-const CREATOR_LINE_RE = /^👤 Créateur : <@(\d+)>$/;
-
-/** Extract the creator user id from the session message (null if absent). */
-function creatorId(content: string): string | null {
-  for (const line of content.split('\n')) {
-    const m = CREATOR_LINE_RE.exec(line.trim());
-    if (m) return m[1];
-  }
-  return null;
-}
-
 /** Replace the first free slot line with an occupied one. */
 function takeFirstFreeSlot(content: string, userId: string): string {
   const lines = content.split('\n');
@@ -110,8 +99,9 @@ function takeFirstFreeSlot(content: string, userId: string): string {
 
 /**
  * A player joins: fill the first free slot. When the squad becomes full,
- * the completion banner is appended (it mentions the creator, which pings
- * them for the final go-ahead, and the buttons get disabled).
+ * the completion banner is appended (it mentions the creator — the first
+ * occupied slot — which pings them for the final go-ahead, and the buttons
+ * get disabled).
  */
 export function joinSession(content: string, userId: string): SessionUpdateResult {
   const view = parseSession(content);
@@ -121,8 +111,8 @@ export function joinSession(content: string, userId: string): SessionUpdateResul
   let updated = takeFirstFreeSlot(content, userId);
   const joined = parseSession(updated);
   if (joined.full) {
-    const cid = creatorId(updated);
-    updated = `${updated}\n${BANNER_PREFIX} — <@${cid ?? ''}> à toi de jouer !`;
+    const creator = joined.players[0];
+    updated = `${updated}\n${BANNER_PREFIX} — <@${creator ?? ''}> à toi de jouer !`;
   }
   return { ok: true, content: updated };
 }

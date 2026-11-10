@@ -30,13 +30,13 @@ const commands = [
       },
       {
         name: 'places',
-        description: 'Nombre de places dans l’escouade (créateur inclus)',
+        description: 'Nombre de places dans l’escouade (4 ou 6)',
         type: 4, // INTEGER
         required: true,
         // No static choices: autocomplete recommends the mission's size.
         // Discord forbids combining `choices` with `autocomplete`.
         autocomplete: true,
-        min_value: 1,
+        min_value: 4,
         max_value: 6,
       },
       {
@@ -67,10 +67,10 @@ const commands = [
       },
       {
         name: 'places',
-        description: 'Nombre de places recommandé (1 à 6)',
+        description: 'Nombre de places recommandé (4 ou 6)',
         type: 4, // INTEGER
         required: true,
-        min_value: 1,
+        min_value: 4,
         max_value: 6,
       },
     ],

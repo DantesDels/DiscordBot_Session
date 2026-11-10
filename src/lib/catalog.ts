@@ -8,8 +8,9 @@
  * - `role_id`: Discord role snowflake pinged when a session of this mission
  *   is created (the session response must allow the role in
  *   `allowed_mentions`, otherwise Discord silently drops the ping).
- * - `slots`: recommended squad size (1-6), shown as the starred choice in
- *   the `places` autocomplete. The creator can still pick any value.
+ * - `slots`: recommended squad size (4 or 6, see ALLOWED_SLOTS), shown as
+ *   the starred choice in the `places` autocomplete. The creator can still
+ *   pick the other size.
  *
  * A single JSON blob keeps listing atomic (no KV pagination, no eventual
  * consistency lag on `list()`) — writes are rare (moderator commands only),
@@ -18,7 +19,8 @@
 
 export const CATALOG_KEY = 'missions';
 export const MAX_MISSION_LENGTH = 100;
-export const MAX_SLOTS = 6;
+/** Squad sizes offered for sessions: 4 or 6 players (no solo, no odd sizes). */
+export const ALLOWED_SLOTS = [4, 6] as const;
 
 export interface MissionConfig {
   name: string;
@@ -43,9 +45,7 @@ function isValidMission(mission: MissionConfig): boolean {
     mission.name.trim().length > 0 &&
     mission.name.length <= MAX_MISSION_LENGTH &&
     SNOWFLAKE_RE.test(mission.role_id) &&
-    Number.isInteger(mission.slots) &&
-    mission.slots >= 1 &&
-    mission.slots <= MAX_SLOTS
+    (ALLOWED_SLOTS as readonly number[]).includes(mission.slots)
   );
 }
 

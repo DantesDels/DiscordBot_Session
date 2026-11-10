@@ -47,10 +47,15 @@ describe('catalog', () => {
     expect(await addMission(store, { ...VALID, name: 'x'.repeat(101) })).toBe('invalid');
     expect(await addMission(store, { ...VALID, role_id: '123' })).toBe('invalid'); // not a snowflake
     expect(await addMission(store, { ...VALID, role_id: 'role' })).toBe('invalid');
+    // Squad sizes are restricted to 4 or 6.
     expect(await addMission(store, { ...VALID, slots: 0 })).toBe('invalid');
+    expect(await addMission(store, { ...VALID, slots: 1 })).toBe('invalid');
+    expect(await addMission(store, { ...VALID, slots: 3 })).toBe('invalid');
+    expect(await addMission(store, { ...VALID, slots: 5 })).toBe('invalid');
     expect(await addMission(store, { ...VALID, slots: 7 })).toBe('invalid');
     expect(await addMission(store, { ...VALID, slots: 2.5 })).toBe('invalid');
-    expect(await getCatalogue(store)).toEqual([]);
+    expect(await addMission(store, { ...VALID, slots: 6 })).toBe('ok');
+    expect(await getCatalogue(store)).toHaveLength(1);
   });
 
   it('rejects duplicates (accent-insensitive)', async () => {
@@ -89,8 +94,8 @@ describe('missionChoices with the catalog', () => {
   it('matches accents-insensitively and ranks prefixes first', async () => {
     const store = kv();
     await addMission(store, { name: 'Opération Brèche', role_id: '1'.repeat(19), slots: 4 });
-    await addMission(store, { name: 'Opération Nuit', role_id: '1'.repeat(19), slots: 5 });
-    await addMission(store, { name: 'Embuscade', role_id: '1'.repeat(19), slots: 3 });
+    await addMission(store, { name: 'Opération Nuit', role_id: '1'.repeat(19), slots: 6 });
+    await addMission(store, { name: 'Embuscade', role_id: '1'.repeat(19), slots: 4 });
 
     const choices = await missionChoices(store, 'operation');
     expect(choices.map((c) => c.value)).toEqual(['Opération Brèche', 'Opération Nuit']);
