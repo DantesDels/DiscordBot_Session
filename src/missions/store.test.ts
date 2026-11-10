@@ -1,12 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import {
-  addMission,
-  removeMission,
-  findMission,
-  getCatalogue,
-  CATALOG_KEY,
-} from './catalog';
-import { missionChoices } from './missionAutocomplete';
+import { addMission, removeMission, getCatalogue, CATALOG_KEY } from './store';
+import { findMission } from './model';
 
 /** In-memory KVNamespace mock implementing only what the bot uses. */
 class MockKV {
@@ -29,7 +23,7 @@ const kv = () => new MockKV() as unknown as KVNamespace;
 
 const VALID = { name: 'Opération Brèche', role_id: '1569507016454570084', slots: 4 };
 
-describe('catalog', () => {
+describe('catalog store', () => {
   it('adds a mission and finds it (exact then accent/case-insensitive)', async () => {
     const store = kv();
     expect(await addMission(store, VALID)).toBe('ok');
@@ -87,24 +81,5 @@ describe('catalog', () => {
       JSON.stringify([VALID, { name: 'Bad', role_id: 'x', slots: 9 }])
     );
     expect(await getCatalogue(store)).toEqual([VALID]);
-  });
-});
-
-describe('missionChoices with the catalog', () => {
-  it('matches accents-insensitively and ranks prefixes first', async () => {
-    const store = kv();
-    await addMission(store, { name: 'Opération Brèche', role_id: '1'.repeat(19), slots: 4 });
-    await addMission(store, { name: 'Opération Nuit', role_id: '1'.repeat(19), slots: 6 });
-    await addMission(store, { name: 'Embuscade', role_id: '1'.repeat(19), slots: 4 });
-
-    const choices = await missionChoices(store, 'operation');
-    expect(choices.map((c) => c.value)).toEqual(['Opération Brèche', 'Opération Nuit']);
-
-    const accentChoices = await missionChoices(store, 'opération br');
-    expect(accentChoices.map((c) => c.value)).toEqual(['Opération Brèche']);
-
-    const all = await missionChoices(store, '');
-    // The JSON blob keeps insertion order (no KV list() sorting anymore).
-    expect(all.map((c) => c.value)).toEqual(['Opération Brèche', 'Opération Nuit', 'Embuscade']);
   });
 });

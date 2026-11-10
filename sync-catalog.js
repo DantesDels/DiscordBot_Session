@@ -6,7 +6,7 @@
  *
  * The file format is validated first (snowflake role ids, slots 1-6) so a
  * typo never breaks the bot in production. Validation mirrors
- * `src/lib/catalog.ts` (the Worker also filters invalid entries on read).
+ * `src/missions/` (the Worker also filters invalid entries on read).
  */
 
 import { execFileSync } from 'node:child_process';
@@ -52,7 +52,7 @@ for (const [index, mission] of missions.entries()) {
   seen.add(key);
 }
 
-// KV stores the plain array (same shape as src/lib/catalog.ts expects):
+// KV stores the plain array (same shape as src/missions/model.ts expects):
 // the source file wraps it in { "missions": [...] } for comments, so write
 // the normalized payload to a temp file and push that.
 const payload = JSON.stringify(
