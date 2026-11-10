@@ -40,8 +40,8 @@ for (const [index, mission] of missions.entries()) {
     console.error(`${where}: "role_id" must be a Discord snowflake (17-20 digits).`);
     process.exit(1);
   }
-  if (!Number.isInteger(mission.slots) || mission.slots < 1 || mission.slots > 6) {
-    console.error(`${where}: "slots" must be an integer between 1 and 6.`);
+  if (!Number.isInteger(mission.slots) || ![4, 6].includes(mission.slots)) {
+    console.error(`${where}: "slots" must be 4 or 6.`);
     process.exit(1);
   }
   const key = mission.name.trim().toLowerCase();

@@ -12,10 +12,10 @@ import {
 import { missionChoices } from './lib/missionAutocomplete';
 import {
   addMission,
+  ALLOWED_SLOTS,
   findMission,
   getCatalogue,
   MAX_MISSION_LENGTH,
-  MAX_SLOTS,
   removeMission,
 } from './lib/catalog';
 
@@ -115,8 +115,10 @@ async function handleSession(interaction: Interaction, env: Env): Promise<Respon
   }
 
   const places = Number(opts.get('places'));
-  if (!Number.isInteger(places) || places < 1 || places > MAX_SLOTS) {
-    return ephemeral(`❌ Le nombre de places doit être compris entre 1 et ${MAX_SLOTS}.`);
+  if (!Number.isInteger(places) || !(ALLOWED_SLOTS as readonly number[]).includes(places)) {
+    return ephemeral(
+      `❌ Le nombre de places doit être ${ALLOWED_SLOTS.join(' ou ')}.`
+    );
   }
 
   const dateHeure = String(opts.get('date_heure') ?? '');
@@ -146,7 +148,6 @@ async function handleSession(interaction: Interaction, env: Env): Promise<Respon
   }
 
   const content = buildSessionContent({
-    mission: mission.name,
     unix,
     places,
     roleId: mission.role_id,
@@ -207,23 +208,19 @@ async function handleAutocomplete(interaction: Interaction, env: Env): Promise<R
   } else if (option.name === 'places') {
     // All options the user has already filled are present in
     // interaction.data.options — read the selected mission to recommend its
-    // configured squad size (starred and ranked first).
+    // configured squad size (starred and ranked first). Only 4 or 6.
     const catalogue = await getCatalogue(env.CATALOGUE_KV);
     const missionName = String(options(interaction).get('mission') ?? '');
     const mission = missionName ? findMission(catalogue, missionName) : undefined;
 
-    choices = [];
-    if (mission) {
-      choices.push({
-        name: `⭐ ${mission.slots} joueurs (recommandé — ${mission.name})`,
-        value: mission.slots,
-      });
-    }
-    for (let n = 1; n <= MAX_SLOTS; n++) {
-      if (!mission || n !== mission.slots) {
-        choices.push({ name: `${n} joueur${n > 1 ? 's' : ''}`, value: n });
-      }
-    }
+    const sizes = mission
+      ? [mission.slots, ...ALLOWED_SLOTS.filter((s) => s !== mission.slots)]
+      : [...ALLOWED_SLOTS];
+    choices = sizes.map((n) =>
+      mission && mission.slots === n
+        ? { name: `⭐ ${n} joueurs (recommandé)`, value: n }
+        : { name: `${n} joueurs`, value: n }
+    );
   } else {
     choices = [];
   }
@@ -243,7 +240,7 @@ async function handleCatalog(interaction: Interaction, command: string, env: Env
     const result = await addMission(env.CATALOGUE_KV, { name, role_id: roleId, slots });
     if (result === 'invalid') {
       return ephemeral(
-        `❌ Mission invalide : nom de 1 à ${MAX_MISSION_LENGTH} caractères, rôle valide, places entre 1 et ${MAX_SLOTS}.`
+        `❌ Mission invalide : nom de 1 à ${MAX_MISSION_LENGTH} caractères, rôle valide, places ${ALLOWED_SLOTS.join(' ou ')}.`
       );
     }
     if (result === 'duplicate') {

@@ -1,5 +1,5 @@
 {
-  "_comment": "Mission catalog for the /session command. Sync to Cloudflare KV with: npm run catalog:sync. Each entry: name (autocomplete label), role_id (Discord role pinged when a session is created), slots (recommended squad size 1-6, starred in the places autocomplete).",
+  "_comment": "Mission catalog for the /session command. Sync to Cloudflare KV with: npm run catalog:sync. Each entry: name (autocomplete label), role_id (Discord role pinged when a session is created — the role stands for the mission in the session message), slots (recommended squad size, 4 or 6, starred in the places autocomplete).",
   "missions": [
     {
       "name": "Arbitrage",
