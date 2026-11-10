@@ -5,9 +5,9 @@
   "type": "module",
   "description": "Serverless Discord bot for game session management (Cloudflare Workers, HTTP Interactions)",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
-    "typecheck": "tsc --noEmit",
+    "dev": "wrangler dev --config conf/wrangler.toml",
+    "deploy": "wrangler deploy --config conf/wrangler.toml",
+    "typecheck": "tsc -p conf/tsconfig.json",
     "test": "vitest run",
     "register": "node register.js"
   },
