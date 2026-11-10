@@ -1,25 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { missionChoices } from './autocomplete';
-import { addMission } from './store';
-
-/** In-memory KVNamespace mock implementing only what the bot uses. */
-class MockKV {
-  private map = new Map<string, string>();
-
-  async put(key: string, value: string): Promise<void> {
-    this.map.set(key, value);
-  }
-
-  async get(key: string): Promise<string | null> {
-    return this.map.get(key) ?? null;
-  }
-
-  async delete(key: string): Promise<void> {
-    this.map.delete(key);
-  }
-}
-
-const kv = () => new MockKV() as unknown as KVNamespace;
+import { missionChoices } from '../../src/missions/autocomplete';
+import { addMission } from '../../src/missions/store';
+import { kv } from '../helpers';
 
 describe('missionChoices with the catalog', () => {
   it('matches accents-insensitively and ranks prefixes first', async () => {

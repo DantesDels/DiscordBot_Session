@@ -1,25 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { addMission, removeMission, getCatalogue, CATALOG_KEY } from './store';
-import { findMission } from './model';
-
-/** In-memory KVNamespace mock implementing only what the bot uses. */
-class MockKV {
-  private map = new Map<string, string>();
-
-  async put(key: string, value: string): Promise<void> {
-    this.map.set(key, value);
-  }
-
-  async get(key: string): Promise<string | null> {
-    return this.map.get(key) ?? null;
-  }
-
-  async delete(key: string): Promise<void> {
-    this.map.delete(key);
-  }
-}
-
-const kv = () => new MockKV() as unknown as KVNamespace;
+import { addMission, removeMission, getCatalogue, CATALOG_KEY } from '../../src/missions/store';
+import { findMission } from '../../src/missions/model';
+import { MockKV, kv } from '../helpers';
 
 const VALID = { name: 'Opération Brèche', role_id: '1569507016454570084', slots: 4 };
 
