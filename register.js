@@ -5,8 +5,8 @@
  * - With a guild id: instant registration, ideal for testing.
  * - Without: global registration (can take up to 1 hour to propagate).
  *
- * Credentials are read from the environment or from `.dev.vars`
- * (see `.dev.vars.example`): DISCORD_APP_ID and DISCORD_BOT_TOKEN.
+ * Credentials are read from the environment or from `.env`
+ * (see `.env.example`): DISCORD_APP_ID and DISCORD_BOT_TOKEN.
  */
 
 import { existsSync, readFileSync } from 'node:fs';
@@ -81,8 +81,8 @@ const commands = [
 
 function loadDotEnv() {
   const vars = {};
-  for (const file of ['.dev.vars', '.env']) {
-    if (!existsSync(file)) continue;
+  const file = '.env';
+  if (existsSync(file)) {
     for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
       const match = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
       if (match && !line.trimStart().startsWith('#')) vars[match[1]] = match[2];
@@ -98,7 +98,7 @@ const token = env.DISCORD_BOT_TOKEN;
 if (!appId || !token) {
   console.error(
     'Missing DISCORD_APP_ID or DISCORD_BOT_TOKEN. ' +
-      'Put them in .dev.vars (see .dev.vars.example) or export them.'
+      'Put them in .env (see .env.example) or export them.'
   );
   process.exit(1);
 }
