@@ -1,16 +1,20 @@
 /**
- * Mission catalog autocomplete backed by the Cloudflare KV namespace.
+ * Mission autocomplete from the KV catalog.
  *
- * Each mission is a KV entry whose key is the mission name (value is unused).
- * Keys are listed with pagination and matched against the typed query
- * (accent-insensitive, prefix matches ranked first).
- *
- * Note: KV list() is eventually consistent — a freshly added mission may
- * take a few seconds to appear in autocomplete.
+ * Choices are built from the `missions` JSON blob (see catalog.ts): the
+ * option NAME is the mission name and the VALUE is the same name — the
+ * type-2 handler then resolves role/slots from the catalog. Matching is
+ * accent-insensitive, prefixes ranked first.
  */
 
+import { getCatalogue, MissionConfig } from './catalog';
+
+export interface AutocompleteChoice {
+  name: string;
+  value: string;
+}
+
 const MAX_CHOICES = 25; // Discord hard limit for autocomplete choices
-const MAX_KEYS_SCANNED = 500; // keep autocomplete fast on large catalogs
 
 /** Lowercase and strip diacritics so "Breach" matches "Brèche". */
 function normalize(s: string): string {
@@ -20,32 +24,23 @@ function normalize(s: string): string {
     .toLowerCase();
 }
 
-export interface AutocompleteChoice {
-  name: string;
-  value: string;
-}
-
-export async function missionChoices(kv: KVNamespace, query: string): Promise<AutocompleteChoice[]> {
+/** Autocomplete choices for the `mission` option. */
+export async function missionChoices(
+  kv: KVNamespace,
+  query: string
+): Promise<AutocompleteChoice[]> {
+  const catalogue = await getCatalogue(kv);
   const q = normalize(query);
 
-  // Fetch all catalog keys (lexicographic order, paginated).
-  const keys: string[] = [];
-  let cursor: string | undefined;
-  do {
-    const result = await kv.list({ cursor, limit: 100 });
-    keys.push(...result.keys.map((k) => k.name));
-    cursor = result.list_complete ? undefined : result.cursor;
-  } while (cursor !== undefined && keys.length < MAX_KEYS_SCANNED);
-
-  const prefixed: string[] = [];
-  const included: string[] = [];
-  for (const key of keys) {
-    const n = normalize(key);
-    if (q && n.startsWith(q)) prefixed.push(key);
-    else if (!q || n.includes(q)) included.push(key);
+  const prefixed: MissionConfig[] = [];
+  const included: MissionConfig[] = [];
+  for (const mission of catalogue) {
+    const n = normalize(mission.name);
+    if (q && n.startsWith(q)) prefixed.push(mission);
+    else if (!q || n.includes(q)) included.push(mission);
   }
 
   return [...prefixed, ...included]
     .slice(0, MAX_CHOICES)
-    .map((name) => ({ name, value: name }));
+    .map((mission) => ({ name: mission.name, value: mission.name }));
 }

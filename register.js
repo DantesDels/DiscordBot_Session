@@ -33,10 +33,11 @@ const commands = [
         description: 'Nombre de places dans l’escouade (créateur inclus)',
         type: 4, // INTEGER
         required: true,
-        choices: [1, 2, 3, 4, 5, 6].map((n) => ({
-          name: `${n} joueur${n > 1 ? 's' : ''}`,
-          value: n,
-        })),
+        // No static choices: autocomplete recommends the mission's size.
+        // Discord forbids combining `choices` with `autocomplete`.
+        autocomplete: true,
+        min_value: 1,
+        max_value: 6,
       },
       {
         name: 'date_heure',
@@ -45,24 +46,32 @@ const commands = [
         required: true,
         autocomplete: true,
       },
-      {
-        name: 'role',
-        description: 'Rôle à ping pour annoncer la session',
-        type: 8, // ROLE
-        required: false,
-      },
     ],
   },
   {
     name: 'catalogue_ajouter',
-    description: 'Ajouter une mission au catalogue',
+    description: 'Ajouter une mission au catalogue (rôle et places recommandées)',
     default_member_permissions: MANAGE_MESSAGES,
     options: [
       {
         name: 'mission',
-        description: 'Nom exact de la mission',
+        description: 'Nom de la mission',
         type: 3, // STRING
         required: true,
+      },
+      {
+        name: 'role',
+        description: 'Rôle Discord pingé lors d’une session de cette mission',
+        type: 8, // ROLE
+        required: true,
+      },
+      {
+        name: 'places',
+        description: 'Nombre de places recommandé (1 à 6)',
+        type: 4, // INTEGER
+        required: true,
+        min_value: 1,
+        max_value: 6,
       },
     ],
   },
