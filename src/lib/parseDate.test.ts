@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { parseDateTime, dateSuggestions, isWithinWindow } from './parseDate';
+import {
+  parseDateTime,
+  parseDayTime,
+  daySuggestions,
+  timeSuggestions,
+  isWithinWindow,
+} from './parseDate';
 
 // Fixed reference: Tuesday, November 10, 2026, 12:00 UTC = 13:00 Paris (CET, UTC+1).
 const NOW = new Date(Date.UTC(2026, 10, 10, 12, 0));
@@ -77,52 +83,113 @@ describe('isWithinWindow', () => {
   });
 });
 
-describe('dateSuggestions', () => {
-  it('returns defaults when nothing is typed', () => {
-    const choices = dateSuggestions('  ', NOW); // NOW = Tue 13:00 Paris sharp
-    // 6 upcoming half-hour slots + today/tomorrow 20h/21h (deduplicated).
+describe('daySuggestions', () => {
+  it('proposes today and tomorrow first, then weekday-labelled days', () => {
+    const choices = daySuggestions('', NOW);
+    expect(choices[0].name).toBe('Aujourd’hui');
+    expect(choices[1].name).toBe('Demain');
+    // 7-day window from Tuesday: today + 6 more days = 7 total.
+    expect(choices).toHaveLength(7);
+    expect(choices[2].name).toMatch(/jeudi/i);
+    // Values are day starts (00:00 Paris) strictly increasing.
     const values = choices.map((c) => Number(c.value));
-    expect(values.length).toBeGreaterThan(0);
-    // All values are distinct, increasing timestamps inside the window.
-    expect(new Set(values).size).toBe(values.length);
     expect(values).toEqual([...values].sort((a, b) => a - b));
     for (const v of values) {
-      expect(v).toBeGreaterThan(Math.floor(NOW.getTime() / 1000));
-      // Every suggestion is aligned on a half-hour boundary.
-      expect(v % 1800).toBe(0);
+      // 00:00 Paris = 23:00 UTC of the previous day (CET, UTC+1).
+      expect(new Date(v * 1000).toISOString()).toMatch(/T23:00:00\.000Z$/);
     }
-    expect(values[values.length - 1]).toBeLessThanOrEqual(
-      Math.floor(NOW.getTime() / 1000) + 7 * 24 * 3600
-    );
   });
 
-  it('starts the default slots right after the current time', () => {
-    // A now at an odd time (13:47) still yields :00/:30-aligned slots.
+  it('matches hand-typed weekdays', () => {
+    const choices = daySuggestions('jeu', NOW);
+    expect(choices).toHaveLength(1); // only Thursday within the window
+    expect(choices[0].name).toMatch(/jeudi/i);
+    expect(Number(choices[0].value)).toBe(utc(12, 0));
+  });
+
+  it('matches numeric day/month', () => {
+    const choices = daySuggestions('13/11', NOW);
+    expect(choices).toHaveLength(1);
+    expect(choices[0].name).toMatch(/vendredi 13 novembre/i);
+  });
+
+  it('returns nothing for unparseable input', () => {
+    expect(daySuggestions('blabla', NOW)).toEqual([]);
+  });
+});
+
+describe('timeSuggestions', () => {
+  it('offers the next 24h by half-hour steps, capped at 25 choices by Discord', () => {
+    const choices = timeSuggestions('', NOW); // NOW = 13:00 Paris
+    expect(choices[0].name).toBe('13:30');
+    expect(choices[1].name).toBe('14:00');
+    // 24h of half-hour slots would be 47, but Discord caps at 25.
+    expect(choices).toHaveLength(25);
+    expect(choices[24].name).toBe('01:30'); // 13:30 + 24 slots
+    for (const c of choices) {
+      expect(Number(c.value) % 1800).toBe(0);
+      expect(isWithinWindow(Number(c.value), NOW)).toBe(true);
+    }
+  });
+
+  it('scopes slots to the selected day (tomorrow), capped at 25', () => {
+    const tomorrow = String(utc(11, 0)); // day value at 00:00 Paris
+    const choices = timeSuggestions('', NOW, tomorrow);
+    expect(choices[0].name).toBe('00:00');
+    // 48 slots on a full day, capped at 25 -> up to 12:00.
+    expect(choices).toHaveLength(25);
+    expect(choices[24].name).toBe('12:00');
+    for (const c of choices) {
+      expect(isWithinWindow(Number(c.value), NOW)).toBe(true);
+    }
+  });
+
+  it('starts today’s slots at the next half hour, not the past', () => {
+    const today = String(utc(10, 0));
     const nowOdd = new Date(Date.UTC(2026, 10, 10, 12, 47)); // 13:47 Paris
-    const choices = dateSuggestions('', nowOdd);
-    const values = choices.map((c) => Number(c.value));
-    expect(values.length).toBeGreaterThan(0);
-    for (const v of values) expect(v % 1800).toBe(0);
-    // First slot is the next half hour: 14:00 Paris.
-    expect(choices[0].name).toMatch(/14:00/);
+    const choices = timeSuggestions('', nowOdd, today);
+    expect(choices[0].name).toBe('14:00');
   });
 
-  it('offers the next days too when only a time is given', () => {
-    const choices = dateSuggestions('20h', NOW);
-    expect(choices.length).toBe(3); // today, tomorrow, day+2
-    expect(choices[0].value).toBe(String(utc(10, 20)));
-    expect(choices[1].value).toBe(String(utc(11, 20)));
-    expect(choices[2].value).toBe(String(utc(12, 20)));
-    expect(choices[0].name).toMatch(/20:00/);
+  it('snaps a hand-typed time and continues with later slots', () => {
+    const tomorrow = String(utc(11, 0));
+    const choices = timeSuggestions('20h10', NOW, tomorrow);
+    expect(choices[0].name).toBe('20:00');
+    expect(choices[1].name).toBe('20:30');
+    expect(choices[2].name).toBe('21:00');
   });
 
-  it('returns a single choice for an explicit day', () => {
-    const choices = dateSuggestions('jeu 20h', NOW);
-    expect(choices.length).toBe(1);
-    expect(choices[0].value).toBe(String(utc(12, 20)));
+  it('rejects an invalid hand-typed time', () => {
+    expect(timeSuggestions('25h', NOW)).toEqual([]);
+    // Unrecognized text falls back to the default upcoming slots (the user
+    // is still typing) rather than an empty menu.
+    expect(timeSuggestions('xx', NOW)[0].name).toBe('13:30');
   });
 
-  it('returns no suggestion for unparseable input', () => {
-    expect(dateSuggestions('blabla', NOW)).toEqual([]);
+  it('falls back to upcoming slots when a past time is typed today', () => {
+    const today = String(utc(10, 0)); // NOW = 13:00
+    const choices = timeSuggestions('8h', NOW, today);
+    expect(choices[0].name).toBe('13:30'); // not 08:00 (in the past)
+  });
+});
+
+describe('parseDayTime', () => {
+  it('combines a day value with a time value', () => {
+    const day = String(utc(12, 0)); // Thursday Nov 12
+    const time = String(utc(10, 20)); // any day at 20:00
+    expect(parseDayTime(day, time, NOW)).toBe(utc(12, 20));
+  });
+
+  it('rejects non-numeric or out-of-window combinations', () => {
+    expect(parseDayTime('abc', String(utc(10, 20)), NOW)).toBeNull();
+    expect(parseDayTime(String(utc(10, 0)), 'abc', NOW)).toBeNull();
+    // Day + 23:30 within window is fine; a day beyond the window is not.
+    expect(parseDayTime(String(utc(20, 0)), String(utc(10, 23, 30)), NOW)).toBeNull();
+  });
+
+  it('rejects a time that has already passed on the selected day', () => {
+    const today = String(utc(10, 0)); // NOW = 13:00
+    expect(parseDayTime(today, String(utc(10, 8, 30)), NOW)).toBeNull();
+    expect(parseDayTime(today, String(utc(10, 20, 30)), NOW)).toBe(utc(10, 20, 30));
   });
 });

@@ -1,5 +1,9 @@
 import { verifyKey } from 'discord-interactions';
-import { dateSuggestions, parseDateTime, isWithinWindow } from './lib/parseDate';
+import {
+  daySuggestions,
+  parseDayTime,
+  timeSuggestions,
+} from './lib/parseDate';
 import {
   buildSessionComponents,
   buildSessionContent,
@@ -101,7 +105,7 @@ function userId(interaction: Interaction): string | undefined {
  *  Slash commands
  *  ------------------------------------------------------------------ */
 
-/** `/session mission:<catalogue> date_heure:<shortcut>` — role AND squad size come from the catalog. */
+/** `/session mission:<catalogue> jour:<day> heure:<slot>` — role AND squad size come from the catalog. */
 async function handleSession(interaction: Interaction, env: Env): Promise<Response> {
   const opts = options(interaction);
 
@@ -116,24 +120,13 @@ async function handleSession(interaction: Interaction, env: Env): Promise<Respon
   }
   const places = mission.slots;
 
-  const dateHeure = String(opts.get('date_heure') ?? '');
-  const now = new Date();
-  let unix: number | null;
-  if (/^\d+$/.test(dateHeure)) {
-    // Autocomplete sends the option VALUE back, not the displayed name: for
-    // date_heure the value is the already-resolved UNIX timestamp. Pure digits
-    // are therefore used as-is — but still re-validated against the sliding
-    // window, since a picked suggestion can go stale (submitted minutes
-    // later) or the user can type a raw timestamp by hand.
-    const candidate = Number(dateHeure);
-    unix = isWithinWindow(candidate, now) ? candidate : null;
-  } else {
-    unix = parseDateTime(dateHeure, now);
-  }
+  const jour = String(opts.get('jour') ?? '').trim();
+  const heure = String(opts.get('heure') ?? '').trim();
+  const unix = parseDayTime(jour, heure, new Date());
   if (unix === null) {
     return ephemeral(
-      '❌ Date incomprise ou hors fenêtre (7 jours glissants, jamais dans le passé). ' +
-        'Essaie par exemple `jeu 20h`, `demain 18h30` ou `12/11 21h`.'
+      '❌ Date ou heure invalide, dépassée, ou hors fenêtre (7 jours glissants). ' +
+        'Choisis le jour et l’heure via l’autocomplétion.'
     );
   }
 
@@ -198,11 +191,14 @@ async function handleAutocomplete(interaction: Interaction, env: Env): Promise<R
 
   if (option.name === 'mission') {
     choices = await missionChoices(env.CATALOGUE_KV, String(option.value ?? ''));
-  } else if (option.name === 'date_heure') {
-    choices = dateSuggestions(String(option.value ?? ''), new Date());
+  } else if (option.name === 'jour') {
+    choices = daySuggestions(String(option.value ?? ''), new Date());
+  } else if (option.name === 'heure') {
+    // The `jour` option may already be filled: its value is the day at
+    // 00:00 Paris, which scopes the half-hour slots.
+    const day = String(options(interaction).get('jour') ?? '') || undefined;
+    choices = timeSuggestions(String(option.value ?? ''), new Date(), day);
   } else {
-    // The `places` option no longer exists on /session: the squad size is
-    // the mission's configured `slots` (see handleSession).
     choices = [];
   }
 

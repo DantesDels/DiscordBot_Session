@@ -1,13 +1,19 @@
 /**
- * Human-friendly French date/time parsing for the `/session` command.
+ * Date and time handling for the `/session` command.
  *
- * Design constraints (see README):
- * - Players type shortcuts like "jeu 20h", "demain 18h30" or "12/11 21h".
- * - The target must fall inside a sliding 7-day window starting "now".
- * - Past times are rejected (anti-past protection): the bot never schedules
- *   a session that has already started.
- * - All wall-clock reasoning happens in Europe/Paris (the bot's audience);
- *   results are UNIX timestamps for Discord `<t:X:F>` / `<t:X:R>` tags.
+ * The command takes two separate options:
+ * - `jour` (day): autocomplete proposes "Aujourd'hui" / "Demain" / weekday
+ *   names over the sliding 7-day window. The option VALUE is a UNIX
+ *   timestamp of that day at 00:00 Paris time (so any time on that day,
+ *   snapped to half-hours, stays within the same calendar day).
+ * - `heure` (time): autocomplete proposes half-hour slots. When `jour` is
+ *   already filled, the next 24 hours are offered by 30-minute steps from
+ *   the current time; otherwise slots start from today 00:00 (bounded by
+ *   the window).
+ *
+ * Wall-clock reasoning happens in Europe/Paris (the bot's audience);
+ * results are UNIX timestamps for Discord `<t:X:F>` / `<t:X:R>` tags.
+ * Hand-typed times are snapped down to the previous half-hour slot.
  */
 
 export interface DateSuggestion {
@@ -19,6 +25,7 @@ export interface DateSuggestion {
 
 const PARIS_TZ = 'Europe/Paris';
 const WINDOW_SECONDS = 7 * 24 * 60 * 60;
+const HALF_HOUR = 1800; // seconds
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 
@@ -116,6 +123,211 @@ function addDays(p: WallClock, delta: number): WallClock {
   };
 }
 
+/** Sliding window check: strictly after now, within the next 7 days. */
+export function isWithinWindow(unix: number, now: Date): boolean {
+  const nowSec = Math.floor(now.getTime() / 1000);
+  return unix > nowSec && unix <= nowSec + WINDOW_SECONDS;
+}
+
+/** Snap a UNIX timestamp (seconds) down to the previous half-hour slot. */
+function snapToHalfHour(unix: number): number {
+  return Math.floor(unix / HALF_HOUR) * HALF_HOUR;
+}
+
+/** Midnight (Paris) of the day of `instant`, as a UNIX timestamp. */
+function startOfDay(instant: Date): number {
+  const p = parisParts(instant);
+  return Math.floor(parisToEpochMs(p.year, p.month, p.day, 0, 0) / 1000);
+}
+
+// ---------------------------------------------------------------------------
+// Day options (jour)
+// ---------------------------------------------------------------------------
+
+/** Format a day timestamp as a Paris-local label (e.g. "mardi 10 novembre"). */
+function dayLabel(unix: number): string {
+  return new Intl.DateTimeFormat('fr-FR', {
+    timeZone: PARIS_TZ,
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  }).format(new Date(unix * 1000));
+}
+
+/** Cap: a day is only offered if at least one slot on it is still future. */
+function dayHasFutureSlots(dayStartUnix: number, now: Date): boolean {
+  return dayStartUnix + 36 * 3600 > Math.floor(now.getTime() / 1000) + 60;
+}
+
+/**
+ * Autocomplete choices for the `jour` option.
+ * - Empty/partial input: "Aujourd'hui", "Demain", then weekday-labelled days
+ *   across the 7-day sliding window (max 8 choices total, Discord allows 25).
+ * - Hand-typed input (e.g. "mar", "jeudi", "13/11"): matching days.
+ */
+export function daySuggestions(input: string, now: Date): DateSuggestion[] {
+  const q = normalize(input);
+  const today = startOfDay(now);
+  const out: DateSuggestion[] = [];
+
+  const push = (delta: number, name?: string) => {
+    const dayStart = today + delta * 86400;
+    if (!dayHasFutureSlots(dayStart, now)) return;
+    out.push({
+      name: name ?? dayLabel(dayStart),
+      value: String(dayStart),
+    });
+  };
+
+  if (!q || 'aujourdhui'.startsWith(q) || 'aujourd hui'.startsWith(q)) {
+    push(0, 'Aujourd’hui');
+  }
+  if (!q || 'demain'.startsWith(q)) {
+    push(1, 'Demain');
+  }
+
+  // Remaining days of the window, labelled by weekday (skips today/tomorrow
+  // already pushed above only when the query is empty; with a query like
+  // "mar" we search by weekday instead).
+  if (!q) {
+    for (let delta = 2; delta <= 6; delta++) push(delta);
+    return out;
+  }
+
+  // Weekday search: match typed text against French weekday names.
+  const names = [
+    ['dimanche', 'dim'],
+    ['lundi', 'lun'],
+    ['mardi', 'mar'],
+    ['mercredi', 'mer'],
+    ['jeudi', 'jeu'],
+    ['vendredi', 'ven'],
+    ['samedi', 'sam'],
+  ];
+  const weekday = names.findIndex(([full, short]) => full.startsWith(q) || short.startsWith(q));
+  if (weekday >= 0) {
+    const nowParts = parisParts(now);
+    for (let delta = 0; delta <= 7; delta++) {
+      if ((nowParts.weekday + delta) % 7 !== weekday) continue;
+      const dayStart = today + delta * 86400;
+      if (dayHasFutureSlots(dayStart, now)) out.push({ name: dayLabel(dayStart), value: String(dayStart) });
+    }
+    return out;
+  }
+
+  // Numeric day/month search: "13/11".
+  const dateMatch = DATE_RE.exec(q);
+  if (dateMatch) {
+    const day = Number(dateMatch[1]);
+    const month = Number(dateMatch[2]);
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const nowParts = parisParts(now);
+      for (const year of [nowParts.year, nowParts.year + 1]) {
+        const ms = parisToEpochMs(year, month, day, 0, 0);
+        const dayStart = Math.floor(ms / 1000);
+        if (dayHasFutureSlots(dayStart, now) && isWithinWindow(dayStart + 12 * 3600, now)) {
+          out.push({ name: dayLabel(dayStart), value: String(dayStart) });
+        }
+      }
+    }
+  }
+
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Time options (heure)
+// ---------------------------------------------------------------------------
+
+/** Format a UNIX timestamp as a Paris-local time label (e.g. "20:30"). */
+function timeLabel(unix: number): string {
+  return new Intl.DateTimeFormat('fr-FR', {
+    timeZone: PARIS_TZ,
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(unix * 1000));
+}
+
+/**
+ * Autocomplete choices for the `heure` option, given the selected day
+ * (timestamp of that day at 00:00 Paris, from the `jour` option value).
+ * - With a day: all remaining half-hour slots on that day; if the day is
+ *   today (or the day value is absent), the next 24h are offered from the
+ *   current time.
+ * - Hand-typed time (e.g. "20h", "20:30"): that slot, snapped to half-hours,
+ *   validated against the window.
+ * Discord caps autocomplete at 25 choices: the EARLIEST 25 slots are kept.
+ */
+export function timeSuggestions(
+  input: string,
+  now: Date,
+  dayTimestamp?: string
+): DateSuggestion[] {
+  const q = normalize(input);
+  const nowSec = Math.floor(now.getTime() / 1000);
+  const today = startOfDay(now);
+
+  const dayStart = dayTimestamp && /^\d+$/.test(dayTimestamp.trim())
+    ? Number(dayTimestamp)
+    : today;
+  const isToday = dayStart === today;
+
+  // Slot range on the selected day: from max(day start, next slot after now)
+  // up to 24h after the day start (or after now when today).
+  const start = isToday
+    ? Math.max(snapToHalfHour(nowSec), nowSec)
+    : dayStart;
+  const limit = isToday ? nowSec + 24 * 3600 : dayStart + 24 * 3600;
+
+  // Hand-typed time: build slots starting at the typed (snapped) time.
+  let first = start;
+  const timeMatch = TIME_RE.exec(q);
+  if (timeMatch) {
+    const hour = Number(timeMatch[1]);
+    const minute = timeMatch[2] === undefined ? 0 : Number(timeMatch[2]);
+    if (hour > 23 || minute > 59) return [];
+    // Wall-clock on the selected day: dayStart is midnight Paris, so add
+    // the time of day directly (both are wall-clock seconds).
+    const typed = dayStart + hour * 3600 + Math.floor(minute / 30) * 30 * 60;
+    if (isToday && typed <= nowSec) {
+      // Past slot typed today: offer the upcoming slots instead.
+      first = start;
+    } else {
+      first = typed;
+    }
+  }
+
+  const out: DateSuggestion[] = [];
+  for (let t = snapToHalfHour(first); t < limit; t += HALF_HOUR) {
+    if (t > nowSec && isWithinWindow(t, now)) {
+      out.push({ name: timeLabel(t), value: String(t) });
+    }
+  }
+  return out.slice(0, 25); // Discord hard limit
+}
+
+/** Parse a full datetime from separate day and time option values. */
+export function parseDayTime(dayValue: string, timeValue: string, now: Date): number | null {
+  if (!/^\d+$/.test(dayValue.trim()) || !/^\d+$/.test(timeValue.trim())) return null;
+  const day = Number(dayValue);
+  const time = Number(timeValue);
+
+  // Both values are UNIX seconds. `time` is a concrete half-hour slot on
+  // some day: extract its wall-clock time-of-day relative to the Paris
+  // midnight of its own day, then apply that offset to the selected day's
+  // midnight (`day` is midnight Paris). Pure second arithmetic works for
+  // CET/CEST dates without DST transitions at the boundaries we use.
+  const timeOfDay = time - startOfDay(new Date(time * 1000));
+  if (timeOfDay < 0 || timeOfDay > 86400 - HALF_HOUR) return null;
+
+  const unix = day + timeOfDay;
+  return isWithinWindow(unix, now) ? unix : null;
+}
+
+// ---------------------------------------------------------------------------
+// Legacy full-text parser (kept for direct parseDateTime callers)
+// ---------------------------------------------------------------------------
+
 /** Extract the time-of-day from the normalized input, or null. */
 function extractTime(s: string): { hour: number; minute: number } | null {
   const m = TIME_RE.exec(s);
@@ -148,22 +360,10 @@ function findDayHint(rest: string): DayHint {
   return { kind: 'none' };
 }
 
-/** Sliding window check: strictly after now, within the next 7 days. */
-export function isWithinWindow(unix: number, now: Date): boolean {
-  const nowSec = Math.floor(now.getTime() / 1000);
-  return unix > nowSec && unix <= nowSec + WINDOW_SECONDS;
-}
-
-/** Snap a UNIX timestamp (seconds) down to the previous half-hour slot. */
-function snapToHalfHour(unix: number): number {
-  return Math.floor(unix / 1800) * 1800;
-}
-
 /**
  * Parse a human shortcut into a UNIX timestamp (seconds), or null when the
  * input is unparseable or falls outside the sliding 7-day window.
- * Results are snapped to half-hour slots (:00 / :30) — e.g. "20h10" becomes
- * 20:00, "20h45" becomes 20:30.
+ * Results are snapped to half-hour slots (:00 / :30).
  */
 export function parseDateTime(input: string, now: Date): number | null {
   const s = normalize(input);
@@ -212,91 +412,4 @@ export function parseDateTime(input: string, now: Date): number | null {
   if (inWindow(today)) return today;
   const tomorrow = build(addDays(nowParts, 1));
   return inWindow(tomorrow) ? tomorrow : null;
-}
-
-/** Format a UNIX timestamp as a Paris-local, human-readable label. */
-export function formatDateLabel(unix: number): string {
-  return new Intl.DateTimeFormat('fr-FR', {
-    timeZone: PARIS_TZ,
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(unix * 1000));
-}
-
-function suggestion(unix: number): DateSuggestion {
-  return { name: formatDateLabel(unix), value: String(unix) };
-}
-
-/**
- * Autocomplete choices for the `date_heure` option.
- * Slots are aligned on half-hours (:00 and :30).
- * - Empty input: the next half-hour slots across the coming hours, then
- *   popular evening slots today/tomorrow.
- * - Parseable input: the rounded interpretation, plus next-days alternates
- *   when no explicit day was given.
- * - Unparseable input: no suggestion (the user is still typing).
- */
-export function dateSuggestions(input: string, now: Date): DateSuggestion[] {
-  const s = normalize(input);
-  const inWindow = (unix: number) => isWithinWindow(unix, now);
-
-  if (!s) {
-    const nowParts = parisParts(now);
-    const defaults: number[] = [];
-
-    // Next half-hour slots from "now" (e.g. 13:47 -> 14:00, 14:30, 15:00...).
-    // nowParts.minute is floored to 0 or 30, then advanced.
-    const floorMinute = nowParts.minute < 30 ? 0 : 30;
-    const firstSlotMs = parisToEpochMs(
-      nowParts.year,
-      nowParts.month,
-      nowParts.day,
-      nowParts.hour,
-      floorMinute
-    );
-    let cursor = firstSlotMs / 1000;
-    if (cursor < Math.floor(now.getTime() / 1000) + 60) cursor += 1800; // skip just-passed slot
-    for (let i = 0; i < 6; i++) {
-      if (inWindow(cursor)) defaults.push(cursor);
-      cursor += 1800;
-    }
-
-    // Popular evening slots today and tomorrow (if not already included).
-    for (const delta of [0, 1]) {
-      for (const hour of [20, 21]) {
-        const unix = Math.floor(
-          parisToEpochMs(
-            nowParts.year,
-            nowParts.month,
-            nowParts.day + delta, // Date.UTC normalizes overflow
-            hour,
-            0
-          ) / 1000
-        );
-        if (inWindow(unix) && !defaults.includes(unix)) defaults.push(unix);
-      }
-    }
-    return defaults.sort((a, b) => a - b).map(suggestion);
-  }
-
-  const unix = parseDateTime(s, now);
-  if (unix === null) return [];
-
-  const out = [suggestion(unix)];
-  if (findDayHint(s.replace(TIME_RE, ' ')).kind === 'none') {
-    // No explicit day: also offer the same time on the next days.
-    const nowParts = parisParts(now);
-    const time = extractTime(s)!;
-    for (const delta of [1, 2]) {
-      const target = addDays(nowParts, delta);
-      const alt = Math.floor(
-        parisToEpochMs(target.year, target.month, target.day, time.hour, time.minute) / 1000
-      );
-      if (inWindow(alt)) out.push(suggestion(alt));
-    }
-  }
-  return out;
 }
