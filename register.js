@@ -19,7 +19,7 @@ const MANAGE_MESSAGES = '8192'; // Discord permission bit, moderators by default
 const commands = [
   {
     name: 'session',
-    description: 'Créer une session de jeu (mission, places, date)',
+    description: 'Créer une session de jeu (mission, date)',
     options: [
       {
         name: 'mission',
@@ -27,17 +27,6 @@ const commands = [
         type: 3, // STRING
         required: true,
         autocomplete: true,
-      },
-      {
-        name: 'places',
-        description: 'Nombre de places dans l’escouade (4 ou 6)',
-        type: 4, // INTEGER
-        required: true,
-        // No static choices: autocomplete recommends the mission's size.
-        // Discord forbids combining `choices` with `autocomplete`.
-        autocomplete: true,
-        min_value: 4,
-        max_value: 6,
       },
       {
         name: 'date_heure',
